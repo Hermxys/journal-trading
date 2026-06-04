@@ -251,7 +251,7 @@ select{background:var(--bg2);border:1px solid var(--border);border-radius:var(--
 <div class="save-toast" id="save-toast">✓ Guardado</div>
 
 <script>
-// ── STATE ──
+// STATE
 let db = JSON.parse(localStorage.getItem('tj_data') || '{}');
 // db = { 'YYYY-MM-DD': { ...dayData } }
 
@@ -260,7 +260,7 @@ let currentMonth = null;
 let saveTimer = null;
 let tradeCounter = 0;
 
-// ── HELPERS ──
+// HELPERS
 const days = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 const months = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
@@ -294,7 +294,7 @@ function formatFullDate(dateStr) {
   return days[d.getDay()] + ', ' + d.getDate() + ' de ' + months[d.getMonth()] + ' ' + d.getFullYear();
 }
 
-// ── GET ACTIVE MONTHS ──
+// GET ACTIVE MONTHS
 function getActiveMonths() {
   const now = new Date();
   const year = now.getFullYear();
@@ -308,7 +308,7 @@ function getActiveMonths() {
   return Array.from(set).sort();
 }
 
-// ── RENDER NAV ──
+// RENDER NAV
 function renderNav() {
   const container = document.getElementById('nav-months');
   container.innerHTML = '';
@@ -323,7 +323,7 @@ function renderNav() {
   });
 }
 
-// ── RENDER SIDEBAR ──
+// RENDER SIDEBAR
 function renderSidebar() {
   const sidebar = document.getElementById('sidebar');
   sidebar.innerHTML = '';
@@ -374,7 +374,7 @@ function renderSidebar() {
   });
 }
 
-// ── NEW DAY ──
+// NEW DAY
 function newDay() {
   const today = dateKey(new Date());
   currentDay = today;
@@ -385,7 +385,7 @@ function newDay() {
   renderAll();
 }
 
-// ── RENDER ALL ──
+// RENDER ALL
 function renderAll() {
   renderNav();
   renderSidebar();
@@ -405,7 +405,7 @@ function renderAll() {
   }
 }
 
-// ── SAVE ──
+// SAVE
 function saveData() {
   localStorage.setItem('tj_data', JSON.stringify(db));
 }
@@ -420,7 +420,7 @@ function triggerSave() {
   }, 600);
 }
 
-// ── COLLECT CURRENT DAY DATA ──
+// COLLECT CURRENT DAY DATA
 function collectCurrentDay() {
   if (!currentDay) return;
   const page = document.getElementById('journal-page');
@@ -463,7 +463,7 @@ function collectCurrentDay() {
   db[currentDay] = d;
 }
 
-// ── RENDER JOURNAL ──
+// RENDER JOURNAL
 function renderJournal(dateStr) {
   tradeCounter = 0;
   const d = db[dateStr] || {};
@@ -628,7 +628,7 @@ function renderJournal(dateStr) {
   updateWeekStats(dateStr);
 }
 
-// ── DOTS ──
+// DOTS
 function buildDots(cid, bid, vid, scid, hiddenId, color, initVal) {
   const c = document.getElementById(cid);
   if (!c) return;
@@ -664,7 +664,7 @@ function updateDelta() {
   }
 }
 
-// ── EMOTIONS ──
+// EMOTIONS
 function togEmo(el, group, cls) {
   if (el.classList.contains('active-emo')) { el.classList.remove(cls,'active-emo'); }
   else { el.classList.add(cls,'active-emo'); }
@@ -694,7 +694,7 @@ function removeCustomEmo(span) {
   triggerSave();
 }
 
-// ── ESTADO ──
+// ESTADO
 const estadoList = [['✓ Dentro del plan','badge-green'],['⚠ Parcialmente','badge-amber'],['✗ Fuera del plan','badge-red']];
 function cycleEstado() {
   const h = document.getElementById('estado-hidden');
@@ -706,7 +706,7 @@ function cycleEstado() {
   triggerSave();
 }
 
-// ── PLAN ──
+// PLAN
 function selPlan(el, cls, idx) {
   document.querySelectorAll('.plan-opt').forEach(x => x.className='plan-opt');
   el.classList.add(cls);
@@ -714,7 +714,7 @@ function selPlan(el, cls, idx) {
   triggerSave();
 }
 
-// ── TRADES ──
+// TRADES
 const resultCycle=[['Win','badge-green'],['Loss','badge-red'],['Breakeven','badge-amber']];
 
 function addTrade(saved) {
@@ -843,7 +843,7 @@ function updatePnlDisplay() {
   updateWeekStats(currentDay);
 }
 
-// ── WEEK STATS ──
+// WEEK STATS
 function updateWeekStats(dateStr) {
   if (!dateStr) return;
   const d = new Date(dateStr+'T12:00:00');
@@ -880,7 +880,7 @@ function updateWeekStats(dateStr) {
   if (wt) wt.textContent=totalTrades;
 }
 
-// ── IMAGE ──
+// IMAGE
 function loadImg(input, tid) {
   const file = input.files[0];
   if (!file) return;
@@ -912,7 +912,7 @@ function rmImg(tid) {
   triggerSave();
 }
 
-// ── INIT ──
+// INIT
 const now = new Date();
 currentMonth = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
 // If there's saved data, open last visited day
@@ -923,7 +923,7 @@ if (allDays.length) {
 }
 renderAll();
 
-// ── NOTION SYNC ──
+// NOTION SYNC
 const NOTION_DB_ID = '43ce266074454252aa1214bc3ce2ce19';
 
 function openModal() {
@@ -974,9 +974,7 @@ async function doSync() {
 **Dirección:** ${dirLabel} · **Resultado:** ${result} · **P&L:** ${pnl>=0?'+':''}$${pnl.toFixed(2)}
 **Setup:** ${setup}
 ${t.nota ? '> '+t.nota : ''}`;
-    }).join('
-
-');
+    }).join('\n\n');
 
     const pageContent = `## ☀️ Pre-sesión
 **Emociones:** ${(d.emosPre||[]).join(' · ')||'—'}
