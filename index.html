@@ -1023,7 +1023,7 @@ ${['Sí, completamente','Parcialmente','No'][d.planIdx] || '—'}
     };
 
     // Check if page already exists for this date
-    const searchRes = await fetch('https://api.notion.com/v1/databases/'+NOTION_DB_ID+'/query', {
+    const searchRes = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/v1/databases/'+NOTION_DB_ID+'/query', {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer '+token,
@@ -1060,7 +1060,7 @@ ${['Sí, completamente','Parcialmente','No'][d.planIdx] || '—'}
 
     if (pageId) {
       // Update existing page properties
-      const updateRes = await fetch('https://api.notion.com/v1/pages/'+pageId, {
+      const updateRes = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/v1/pages/'+pageId, {
         method: 'PATCH',
         headers: {
           'Authorization': 'Bearer '+token,
@@ -1075,7 +1075,7 @@ ${['Sí, completamente','Parcialmente','No'][d.planIdx] || '—'}
       }
     } else {
       // Create new page
-      const createRes = await fetch('https://api.notion.com/v1/pages', {
+      const createRes = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/v1/pages', {
         method: 'POST',
         headers: {
           'Authorization': 'Bearer '+token,
