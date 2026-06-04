@@ -915,13 +915,13 @@ function rmImg(tid) {
 // INIT
 const now = new Date();
 currentMonth = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
-// If there's saved data, open last visited day
 const allDays = Object.keys(db).sort();
 if (allDays.length) {
   currentDay = allDays[allDays.length-1];
   currentMonth = currentDay.slice(0,7);
 }
 renderAll();
+setTimeout(() => { const t = localStorage.getItem('notion_token'); if (t) loadFromNotion(t); }, 400);
 
 // NOTION SYNC
 const NOTION_DB_ID = '43ce266074454252aa1214bc3ce2ce19';
@@ -1115,6 +1115,115 @@ ${['Sí, completamente','Parcialmente','No'][d.planIdx] || '—'}
     if (err.message.includes('token') || err.message.includes('Unauthorized') || err.message.includes('API token')) {
       localStorage.removeItem('notion_token');
       openModal();
+    }
+  }
+}
+
+// LOAD FROM NOTION
+async function loadFromNotion(token) {
+  const btn = document.getElementById('notion-sync-btn');
+  const icon = document.getElementById('notion-btn-icon');
+  const label = document.getElementById('notion-btn-label');
+  if (btn) { btn.className = 'notion-btn syncing'; icon.textContent = '⏳'; label.textContent = 'Cargando...'; }
+
+  try {
+    // Fetch all pages from the database
+    let hasMore = true;
+    let startCursor = undefined;
+    const pages = [];
+
+    while (hasMore) {
+      const body = { page_size: 100 };
+      if (startCursor) body.start_cursor = startCursor;
+
+      const res = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/v1/databases/' + NOTION_DB_ID + '/query', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Notion-Version': '2022-06-28',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Error al cargar');
+      pages.push(...(data.results || []));
+      hasMore = data.has_more;
+      startCursor = data.next_cursor;
+    }
+
+    // Parse each page into our db format
+    let loaded = 0;
+    pages.forEach(page => {
+      const props = page.properties;
+      const fecha = props['Fecha']?.title?.[0]?.plain_text;
+      if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return;
+
+      // Only update if not already in local db or remote is newer
+      const estadoMap = { 'Dentro del plan': 0, 'Parcialmente': 1, 'Fuera del plan': 2 };
+      const planMap = { 'Si': 0, 'Parcialmente': 1, 'No': 2 };
+
+      const emosPre = (props['Emoción pre']?.multi_select || []).map(e => e.name);
+      const emosPost = (props['Emoción post']?.multi_select || []).map(e => e.name);
+      const estadoVal = props['Estado del día']?.select?.name || 'Dentro del plan';
+      const planVal = props['Siguió el plan']?.select?.name || '';
+      const planIdx = planVal === 'Sí' ? 0 : planVal === 'Parcialmente' ? 1 : planVal === 'No' ? 2 : -1;
+
+      const existing = db[fecha] || {};
+      db[fecha] = {
+        ...existing,
+        sesion: props['Sesión']?.select?.name || existing.sesion || 'New York Open',
+        mercado: props['Mercado']?.rich_text?.[0]?.plain_text || existing.mercado || '',
+        estadoIdx: estadoMap[estadoVal] ?? existing.estadoIdx ?? 0,
+        pnl: props['P&L del día']?.number ?? existing.pnl ?? 0,
+        trades: existing.trades || [],
+        intPre: props['Intensidad pre']?.number ?? existing.intPre ?? 0,
+        intPost: props['Intensidad post']?.number ?? existing.intPost ?? 0,
+        intDur: existing.intDur || 0,
+        emosPre: emosPre.length ? emosPre : (existing.emosPre || []),
+        emosPost: emosPost.length ? emosPost : (existing.emosPost || []),
+        emosDur: existing.emosDur || [],
+        notaPre: existing.notaPre || '',
+        notaPost: existing.notaPost || '',
+        planIdx: planIdx !== -1 ? planIdx : (existing.planIdx ?? -1),
+        leccion: existing.leccion || ''
+      };
+      loaded++;
+    });
+
+    saveData();
+
+    // Refresh UI
+    const newDays = Object.keys(db).sort();
+    if (newDays.length && !currentDay) {
+      currentDay = newDays[newDays.length - 1];
+      currentMonth = currentDay.slice(0, 7);
+    }
+    renderAll();
+
+    if (btn) {
+      btn.className = 'notion-btn synced';
+      icon.textContent = '✓';
+      label.textContent = loaded + ' días cargados';
+      setTimeout(() => {
+        btn.className = 'notion-btn';
+        icon.textContent = '🔗';
+        label.textContent = 'Sync Notion';
+      }, 3000);
+    }
+
+  } catch(err) {
+    console.error('loadFromNotion error:', err);
+    if (btn) {
+      btn.className = 'notion-btn error';
+      icon.textContent = '✕';
+      label.textContent = 'Error al cargar';
+      setTimeout(() => {
+        btn.className = 'notion-btn';
+        icon.textContent = '🔗';
+        label.textContent = 'Sync Notion';
+      }, 3000);
     }
   }
 }
