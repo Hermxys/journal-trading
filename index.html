@@ -1050,9 +1050,9 @@ ${['Sí, completamente','Parcialmente','No'][d.planIdx] || '—'}
       'Estado del día': { select: { name: properties['Estado del día'] } },
       'P&L del día': { number: properties['P&L del día'] },
       'Operaciones': { number: properties['Operaciones'] },
-      'Emoción pre': { multi_select: (d.emosPre||[]).map(e => ({ name: e.replace(/[,]/g, '') })) },
+      'Emoción pre': { multi_select: (d.emosPre||[]).map(e => ({ name: e.replace(/^[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ]+/, '').trim() })) },
       'Intensidad pre': { number: properties['Intensidad pre'] },
-      'Emoción post': { multi_select: (d.emosPost||[]).map(e => ({ name: e.replace(/[,]/g, '') })) },
+      'Emoción post': { multi_select: (d.emosPost||[]).map(e => ({ name: e.replace(/^[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ]+/, '').trim() })) },
       'Intensidad post': { number: properties['Intensidad post'] },
       'Siguió el plan': { select: { name: properties['Siguió el plan'] } },
       'Win rate %': { number: properties['Win rate %'] }
