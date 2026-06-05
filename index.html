@@ -948,217 +948,107 @@ async function syncToNotion() {
   doSync();
 }
 
+async function syncDay(dateStr, d, token) {
+  const planOptions = ['Si','Parcialmente','No'];
+  const notionProps = {
+    'Fecha': { title: [{ text: { content: dateStr } }] },
+    'Sesión': { select: { name: d.sesion || 'New York Open' } },
+    'Mercado': { rich_text: [{ text: { content: d.mercado || '' } }] },
+    'Estado del día': { select: { name: ['Dentro del plan','Parcialmente','Fuera del plan'][d.estadoIdx||0] } },
+    'P&L del día': { number: parseFloat(d.pnl||0) },
+    'Operaciones': { number: (d.trades||[]).length },
+    'Emoción pre': { multi_select: (d.emosPre||[]).map(e => ({ name: e.replace(/^[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ]+/, '').trim() })) },
+    'Intensidad pre': { number: d.intPre||0 },
+    'Emoción post': { multi_select: (d.emosPost||[]).map(e => ({ name: e.replace(/^[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ]+/, '').trim() })) },
+    'Intensidad post': { number: d.intPost||0 },
+    'Siguió el plan': { select: { name: planOptions[d.planIdx] || 'Si' } },
+    'Win rate %': { number: (d.trades||[]).length > 0 ? Math.round(((d.trades||[]).filter(t=>t.resultIdx===0).length/(d.trades||[]).length)*100) : 0 },
+    'Datos': { rich_text: (()=>{
+      const payload = JSON.stringify({
+        notaPre: d.notaPre||'', notaPost: d.notaPost||'', leccion: d.leccion||'',
+        intDur: d.intDur||0, emosDur: d.emosDur||[],
+        trades: (d.trades||[]).map(t => ({
+          tid: t.tid, symbol: t.symbol||'', meta: t.meta||'',
+          dir: t.dir||'buy', resultIdx: t.resultIdx||0,
+          pnl: t.pnl||0, setup: t.setup||[], nota: t.nota||'',
+          imgData: t.imgData && (t.imgData.startsWith('r2:') || t.imgData.startsWith('data:')) ? 'r2:'+t.tid : ''
+        }))
+      });
+      const chunks = [];
+      for(let i=0;i<payload.length;i+=1990) chunks.push({text:{content:payload.slice(i,i+1990)}});
+      return chunks.slice(0,10);
+    })() }
+  };
+
+  // Search for existing page
+  const searchRes = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/v1/databases/'+NOTION_DB_ID+'/query', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer '+token, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filter: { property: 'Fecha', title: { equals: dateStr } } })
+  });
+  const searchData = await searchRes.json();
+  if (!searchRes.ok) throw new Error(searchData.message || 'Error buscando');
+
+  const pageId = searchData.results?.[0]?.id || null;
+
+  if (pageId) {
+    const r = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/v1/pages/'+pageId, {
+      method: 'PATCH',
+      headers: { 'Authorization': 'Bearer '+token, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ properties: notionProps })
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.message || 'Error actualizando'); }
+  } else {
+    const r = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/v1/pages', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer '+token, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parent: { database_id: NOTION_DB_ID }, icon: { emoji: '📊' }, properties: notionProps })
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.message || 'Error creando'); }
+  }
+
+  // Upload images to R2
+  for (const t of (d.trades||[])) {
+    if (t.imgData && t.imgData.startsWith('data:')) {
+      try {
+        const mime = t.imgData.split(';')[0].split(':')[1];
+        const binary = atob(t.imgData.split(',')[1]);
+        const arr = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+        await fetch('https://notion-proxy.hermisgarcia0.workers.dev/images/'+t.tid, {
+          method: 'PUT', headers: { 'Content-Type': mime }, body: arr
+        });
+        t.imgData = 'r2:' + t.tid;
+      } catch(e) { console.warn('Image upload failed:', t.tid, e); }
+    }
+  }
+}
+
 async function doSync() {
-  if (!currentDay) { alert('Abre un día primero antes de sincronizar.'); return; }
   collectCurrentDay();
-  const d = db[currentDay];
   const token = localStorage.getItem('notion_token');
   const btn = document.getElementById('notion-sync-btn');
   const icon = document.getElementById('notion-btn-icon');
   const label = document.getElementById('notion-btn-label');
-
-  btn.className = 'notion-btn syncing';
-  icon.textContent = '⏳';
-  label.textContent = 'Sincronizando…';
+  btn.className = 'notion-btn syncing'; icon.textContent = '⏳'; label.textContent = 'Sincronizando...';
 
   try {
-    // Build trades content
-    const tradesContent = (d.trades||[]).map((t,i) => {
-      const dirs = ['buy','sell'];
-      const dirLabel = t.dir === 'buy' ? '▲ Compra' : '▼ Venta';
-      const results = ['Win','Loss','Breakeven'];
-      const result = results[t.resultIdx||0];
-      const pnl = parseFloat(t.pnl||0);
-      const setup = (t.setup||[]).join(' · ') || '—';
-      return `### Trade ${i+1} — ${t.symbol||'—'}
-**Dirección:** ${dirLabel} · **Resultado:** ${result} · **P&L:** ${pnl>=0?'+':''}$${pnl.toFixed(2)}
-**Setup:** ${setup}
-${t.nota ? '> '+t.nota : ''}`;
-    }).join('\n\n');
-
-    const pageContent = `## ☀️ Pre-sesión
-**Emociones:** ${(d.emosPre||[]).join(' · ')||'—'}
-**Intensidad:** ${d.intPre||'—'} / 10
-${d.notaPre ? '> '+d.notaPre : ''}
-
-## ⚡ Durante la sesión
-**Emociones:** ${(d.emosDur||[]).join(' · ')||'—'}
-**Intensidad:** ${d.intDur||'—'} / 10
-
-## 🌙 Post-sesión
-**Emociones:** ${(d.emosPost||[]).join(' · ')||'—'}
-**Intensidad:** ${d.intPost||'—'} / 10
-${d.notaPost ? '> '+d.notaPost : ''}
-
-**Δ Variación emocional:** ${d.intPre&&d.intPost ? (d.intPost-d.intPre>=0?'+':'')+(d.intPost-d.intPre) : '—'}
-
----
-
-## 📈 Operaciones del día
-${tradesContent || '_Sin operaciones registradas_'}
-
----
-
-## ✅ ¿Seguí el plan?
-${['Sí, completamente','Parcialmente','No'][d.planIdx] || '—'}
-
-💡 **Lección del día:** ${d.leccion||'—'}`;
-
-    const planOptions = ['Sí','Parcialmente','No'];
-    const properties = {
-      'Fecha': currentDay,
-      'Sesión': d.sesion || 'New York Open',
-      'Mercado': d.mercado || '',
-      'Estado del día': ['Dentro del plan','Parcialmente','Fuera del plan'][d.estadoIdx||0],
-      'P&L del día': parseFloat(d.pnl||0),
-      'Operaciones': (d.trades||[]).length,
-      'Emoción pre': (d.emosPre||[]).slice(0,5).join(', '),
-      'Intensidad pre': d.intPre||0,
-      'Emoción post': (d.emosPost||[]).slice(0,5).join(', '),
-      'Intensidad post': d.intPost||0,
-      'Siguió el plan': planOptions[d.planIdx] || 'Sí',
-      'Win rate %': (d.trades||[]).length > 0
-        ? Math.round(((d.trades||[]).filter(t=>t.resultIdx===0).length / (d.trades||[]).length)*100)
-        : 0
-    };
-
-    // Check if page already exists for this date
-    const searchRes = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/v1/databases/'+NOTION_DB_ID+'/query', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer '+token,
-        'Notion-Version': '2022-06-28',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        filter: { property: 'Fecha', title: { equals: currentDay } }
-      })
-    });
-
-    const searchData = await searchRes.json();
-    if (!searchRes.ok) throw new Error(searchData.message || 'Error al buscar en Notion');
-
-    let pageId = null;
-    if (searchData.results && searchData.results.length > 0) {
-      pageId = searchData.results[0].id;
+    const allDays = Object.keys(db).filter(d => db[d] && Object.keys(db[d]).length > 1);
+    let done = 0;
+    for (const dateStr of allDays) {
+      label.textContent = `${done+1}/${allDays.length} días...`;
+      await syncDay(dateStr, db[dateStr], token);
+      done++;
     }
-
-    const notionProps = {
-      'Fecha': { title: [{ text: { content: currentDay } }] },
-      'Sesión': { select: { name: properties['Sesión'] } },
-      'Mercado': { rich_text: [{ text: { content: properties['Mercado'] } }] },
-      'Estado del día': { select: { name: properties['Estado del día'] } },
-      'P&L del día': { number: properties['P&L del día'] },
-      'Operaciones': { number: properties['Operaciones'] },
-      'Emoción pre': { multi_select: (d.emosPre||[]).map(e => ({ name: e.replace(/^[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ]+/, '').trim() })) },
-      'Intensidad pre': { number: properties['Intensidad pre'] },
-      'Emoción post': { multi_select: (d.emosPost||[]).map(e => ({ name: e.replace(/^[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ]+/, '').trim() })) },
-      'Intensidad post': { number: properties['Intensidad post'] },
-      'Siguió el plan': { select: { name: properties['Siguió el plan'] } },
-      'Win rate %': { number: properties['Win rate %'] },
-      'Datos': { rich_text: (()=>{
-        const payload = JSON.stringify({
-          notaPre: d.notaPre||'',
-          notaPost: d.notaPost||'',
-          leccion: d.leccion||'',
-          intDur: d.intDur||0,
-          emosDur: d.emosDur||[],
-          trades: (d.trades||[]).map(t => ({
-            tid: t.tid, symbol: t.symbol||'', meta: t.meta||'',
-            dir: t.dir||'buy', resultIdx: t.resultIdx||0,
-            pnl: t.pnl||0, setup: t.setup||[], nota: t.nota||'',
-            imgData: (t.imgData && (t.imgData.startsWith('r2:') || t.imgData.startsWith('data:'))) ? 'r2:'+t.tid : ''
-          }))
-        });
-        // Split into chunks of 1990 chars
-        const chunks = [];
-        for(let i=0;i<payload.length;i+=1990) chunks.push({text:{content:payload.slice(i,i+1990)}});
-        return chunks.slice(0,10); // max 10 rich_text blocks
-      })() }
-    };
-
-    if (pageId) {
-      // Update existing page properties
-      const updateRes = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/v1/pages/'+pageId, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': 'Bearer '+token,
-          'Notion-Version': '2022-06-28',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ properties: notionProps })
-      });
-      if (!updateRes.ok) {
-        const err = await updateRes.json();
-        throw new Error(err.message || 'Error al actualizar');
-      }
-    } else {
-      // Create new page
-      const createRes = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/v1/pages', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer '+token,
-          'Notion-Version': '2022-06-28',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          parent: { database_id: NOTION_DB_ID },
-          icon: { emoji: '📊' },
-          properties: notionProps
-        })
-      });
-      const createData = await createRes.json();
-      if (!createRes.ok) throw new Error(createData.message || 'Error al crear página');
-      pageId = createData.id;
-    }
-
-    // Upload images to R2
-    const imageTrades = (d.trades||[]).filter(t => t.imgData && t.imgData.startsWith('data:'));
-    if (imageTrades.length > 0) {
-      icon.textContent = '📷';
-      label.textContent = 'Subiendo imágenes...';
-      for (const t of imageTrades) {
-        try {
-          const base64 = t.imgData.split(',')[1];
-          const mime = t.imgData.split(';')[0].split(':')[1];
-          const binary = atob(base64);
-          const arr = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
-          await fetch('https://notion-proxy.hermisgarcia0.workers.dev/images/' + t.tid, {
-            method: 'PUT',
-            headers: { 'Content-Type': mime },
-            body: arr
-          });
-          // Replace base64 with r2 reference in local db
-          const dayTrade = (db[currentDay]?.trades||[]).find(dt => dt.tid === t.tid);
-          if (dayTrade) dayTrade.imgData = 'r2:' + t.tid;
-        } catch(imgErr) { console.warn('Image upload failed:', imgErr); }
-      }
-      saveData();
-    }
-
-    btn.className = 'notion-btn synced';
-    icon.textContent = '✓';
-    label.textContent = 'Sincronizado';
-    setTimeout(() => {
-      btn.className = 'notion-btn';
-      icon.textContent = '🔗';
-      label.textContent = 'Sync Notion';
-    }, 3000);
-
+    saveData();
+    btn.className = 'notion-btn synced'; icon.textContent = '✓'; label.textContent = done + ' días sincronizados';
+    setTimeout(() => { btn.className = 'notion-btn'; icon.textContent = '🔗'; label.textContent = 'Sync Notion'; }, 3000);
   } catch(err) {
     console.error(err);
-    btn.className = 'notion-btn error';
-    icon.textContent = '✕';
-    label.textContent = err.message.slice(0,30);
-    setTimeout(() => {
-      btn.className = 'notion-btn';
-      icon.textContent = '🔗';
-      label.textContent = 'Sync Notion';
-    }, 4000);
-    if (err.message.includes('token') || err.message.includes('Unauthorized') || err.message.includes('API token')) {
-      localStorage.removeItem('notion_token');
-      openModal();
+    btn.className = 'notion-btn error'; icon.textContent = '✕'; label.textContent = err.message.slice(0,30);
+    setTimeout(() => { btn.className = 'notion-btn'; icon.textContent = '🔗'; label.textContent = 'Sync Notion'; }, 4000);
+    if (err.message.includes('Unauthorized') || err.message.includes('token')) {
+      localStorage.removeItem('notion_token'); openModal();
     }
   }
 }
