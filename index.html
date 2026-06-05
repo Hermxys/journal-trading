@@ -764,7 +764,7 @@ function addTrade(saved) {
         <input type="file" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;"
           onchange="loadImg(this,'${tid}')">
         <div class="t-img-preview" style="display:${saved?.imgData?'block':'none'};">
-          <img class="preview-img t-img-el" src="${saved?.imgData||''}" alt="Captura">
+          <img class="preview-img t-img-el" src="${saved?.imgData||''}" alt="Captura" onerror="this.style.display='none'">
         </div>
         <div class="t-img-placeholder" style="display:${saved?.imgData?'none':'block'};">
           <span style="font-size:22px;display:block;margin-bottom:6px;">📷</span>
@@ -1174,45 +1174,36 @@ async function loadFromNotion(token) {
   }
 }
 
-// LOAD R2 IMAGES IN BACKGROUND
-async function loadR2Images() {
-  let updated = false;
+// LOAD R2 IMAGES - use Worker URL directly as img src
+function loadR2Images() {
   for (const [date, dayData] of Object.entries(db)) {
     for (const trade of (dayData.trades||[])) {
       if (trade.imgData && trade.imgData.startsWith('r2:')) {
         const key = trade.imgData.replace('r2:', '');
-        try {
-          const res = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/images/' + key);
-          if (res.ok) {
-            const blob = await res.blob();
-            const b64 = await new Promise(resolve => {
-              const reader = new FileReader();
-              reader.onload = e => resolve(e.target.result);
-              reader.readAsDataURL(blob);
-            });
-            trade.imgData = b64;
-            updated = true;
-            // Update image in DOM if currently visible
-            const zone = document.getElementById('uz-' + key);
-            if (zone) {
-              const imgEl = zone.querySelector('.t-img-el');
-              const preview = zone.querySelector('.t-img-preview');
-              const placeholder = zone.querySelector('.t-img-placeholder');
-              const imgBar = zone.querySelector('.t-img-bar');
-              const fileInput = zone.querySelector('input[type=file]');
-              if (imgEl) imgEl.src = b64;
-              if (preview) preview.style.display = 'block';
-              if (placeholder) placeholder.style.display = 'none';
-              if (imgBar) imgBar.style.display = 'flex';
-              if (fileInput) fileInput.style.display = 'none';
-              zone.classList.add('has-img');
-            }
-          }
-        } catch(e) { console.warn('R2 image load failed for', key, e); }
+        const imgUrl = 'https://notion-proxy.hermisgarcia0.workers.dev/images/' + key;
+        // Replace r2: reference with direct URL
+        trade.imgData = imgUrl;
+        // Update DOM if trade card is visible
+        const zone = document.getElementById('uz-' + key);
+        if (zone) {
+          const imgEl = zone.querySelector('.t-img-el');
+          const preview = zone.querySelector('.t-img-preview');
+          const placeholder = zone.querySelector('.t-img-placeholder');
+          const imgBar = zone.querySelector('.t-img-bar');
+          const fileInput = zone.querySelector('input[type=file]');
+          if (imgEl) imgEl.src = imgUrl;
+          if (preview) preview.style.display = 'block';
+          if (placeholder) placeholder.style.display = 'none';
+          if (imgBar) imgBar.style.display = 'flex';
+          if (fileInput) fileInput.style.display = 'none';
+          zone.classList.add('has-img');
+        }
       }
     }
   }
-  if (updated) saveData();
+  saveData();
+  // Re-render current day so images show immediately
+  if (currentDay) renderJournal(currentDay);
 }
 </script>
 </body>
