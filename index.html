@@ -1056,14 +1056,25 @@ ${['Sí, completamente','Parcialmente','No'][d.planIdx] || '—'}
       'Intensidad post': { number: properties['Intensidad post'] },
       'Siguió el plan': { select: { name: properties['Siguió el plan'] } },
       'Win rate %': { number: properties['Win rate %'] },
-      'Datos': { rich_text: [{ text: { content: JSON.stringify({
-        notaPre: d.notaPre||'',
-        notaPost: d.notaPost||'',
-        leccion: d.leccion||'',
-        intDur: d.intDur||0,
-        emosDur: d.emosDur||[],
-        trades: (d.trades||[]).map(t => ({...t, imgData: t.imgData ? 'r2:'+t.tid : ''}))
-      }).slice(0, 1990) }}] }
+      'Datos': { rich_text: (()=>{
+        const payload = JSON.stringify({
+          notaPre: d.notaPre||'',
+          notaPost: d.notaPost||'',
+          leccion: d.leccion||'',
+          intDur: d.intDur||0,
+          emosDur: d.emosDur||[],
+          trades: (d.trades||[]).map(t => ({
+            tid: t.tid, symbol: t.symbol||'', meta: t.meta||'',
+            dir: t.dir||'buy', resultIdx: t.resultIdx||0,
+            pnl: t.pnl||0, setup: t.setup||[], nota: t.nota||'',
+            imgData: (t.imgData && (t.imgData.startsWith('r2:') || t.imgData.startsWith('data:'))) ? 'r2:'+t.tid : ''
+          }))
+        });
+        // Split into chunks of 1990 chars
+        const chunks = [];
+        for(let i=0;i<payload.length;i+=1990) chunks.push({text:{content:payload.slice(i,i+1990)}});
+        return chunks.slice(0,10); // max 10 rich_text blocks
+      })() }
     };
 
     if (pageId) {
@@ -1207,9 +1218,10 @@ async function loadFromNotion(token) {
 
       // Try to parse full data from Datos field
       let extras = {};
-      const datosRaw = props['Datos']?.rich_text?.[0]?.plain_text;
+      const datosBlocks = props['Datos']?.rich_text || [];
+      const datosRaw = datosBlocks.map(b => b.plain_text || '').join('');
       if (datosRaw) {
-        try { extras = JSON.parse(datosRaw); } catch(e) {}
+        try { extras = JSON.parse(datosRaw); } catch(e) { console.warn('Datos parse error:', e); }
       }
 
       db[fecha] = {
@@ -1235,26 +1247,8 @@ async function loadFromNotion(token) {
 
     saveData();
 
-    // Load R2 images for trades that reference them
-    for (const [date, dayData] of Object.entries(db)) {
-      for (const trade of (dayData.trades||[])) {
-        if (trade.imgData && trade.imgData.startsWith('r2:') ) {
-          const key = trade.imgData.replace('r2:', '');
-          try {
-            const res = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/images/' + key);
-            if (res.ok) {
-              const blob = await res.blob();
-              const reader = new FileReader();
-              await new Promise(resolve => {
-                reader.onload = e => { trade.imgData = e.target.result; resolve(); };
-                reader.readAsDataURL(blob);
-              });
-            }
-          } catch(e) { console.warn('Image load failed:', e); }
-        }
-      }
-    }
-    saveData();
+    // Load R2 images async in background
+    loadR2Images();
 
     // Refresh UI
     const newDays = Object.keys(db).sort();
@@ -1288,6 +1282,47 @@ async function loadFromNotion(token) {
       }, 3000);
     }
   }
+}
+
+// LOAD R2 IMAGES IN BACKGROUND
+async function loadR2Images() {
+  let updated = false;
+  for (const [date, dayData] of Object.entries(db)) {
+    for (const trade of (dayData.trades||[])) {
+      if (trade.imgData && trade.imgData.startsWith('r2:')) {
+        const key = trade.imgData.replace('r2:', '');
+        try {
+          const res = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/images/' + key);
+          if (res.ok) {
+            const blob = await res.blob();
+            const b64 = await new Promise(resolve => {
+              const reader = new FileReader();
+              reader.onload = e => resolve(e.target.result);
+              reader.readAsDataURL(blob);
+            });
+            trade.imgData = b64;
+            updated = true;
+            // Update image in DOM if currently visible
+            const zone = document.getElementById('uz-' + key);
+            if (zone) {
+              const imgEl = zone.querySelector('.t-img-el');
+              const preview = zone.querySelector('.t-img-preview');
+              const placeholder = zone.querySelector('.t-img-placeholder');
+              const imgBar = zone.querySelector('.t-img-bar');
+              const fileInput = zone.querySelector('input[type=file]');
+              if (imgEl) imgEl.src = b64;
+              if (preview) preview.style.display = 'block';
+              if (placeholder) placeholder.style.display = 'none';
+              if (imgBar) imgBar.style.display = 'flex';
+              if (fileInput) fileInput.style.display = 'none';
+              zone.classList.add('has-img');
+            }
+          }
+        } catch(e) { console.warn('R2 image load failed for', key, e); }
+      }
+    }
+  }
+  if (updated) saveData();
 }
 </script>
 </body>
