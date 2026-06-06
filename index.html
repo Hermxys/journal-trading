@@ -764,7 +764,7 @@ function addTrade(saved) {
         <input type="file" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;"
           onchange="loadImg(this,'${tid}')">
         <div class="t-img-preview" style="display:${saved?.imgData?'block':'none'};">
-          <img class="preview-img t-img-el" src="${saved?.imgData?.startsWith('r2:') ? '' : (saved?.imgData||'')}" alt="Captura" style="${saved?.imgData?.startsWith('r2:') ? 'opacity:0.3' : ''}">
+          <img class="preview-img t-img-el" src="${saved?.imgData?.startsWith('r2:') ? 'https://notion-proxy.hermisgarcia0.workers.dev/images/'+saved.imgData.slice(3) : (saved?.imgData||'')}" alt="Captura">
         </div>
         <div class="t-img-placeholder" style="display:${saved?.imgData?'none':'block'};">
           <span style="font-size:22px;display:block;margin-bottom:6px;">📷</span>
@@ -885,20 +885,49 @@ function loadImg(input, tid) {
   const file = input.files[0];
   if (!file) return;
   const r = new FileReader();
-  r.onload = e => {
+  r.onload = async e => {
+    const base64 = e.target.result;
     const zone = document.getElementById('uz-'+tid);
-    zone.querySelector('.t-img-el').src = e.target.result;
-    zone.querySelector('.t-img-preview').style.display='block';
-    zone.querySelector('.t-img-placeholder').style.display='none';
-    zone.querySelector('.t-img-bar').style.display='flex';
-    zone.querySelector('.t-img-name').textContent='📎 '+file.name;
-    zone.querySelector('.t-img-data').value=e.target.result;
+
+    // Show image immediately from base64
+    zone.querySelector('.t-img-el').src = base64;
+    zone.querySelector('.t-img-preview').style.display = 'block';
+    zone.querySelector('.t-img-placeholder').style.display = 'none';
+    const imgBar = zone.querySelector('.t-img-bar');
+    imgBar.style.display = 'flex';
+    zone.querySelector('.t-img-name').textContent = '📎 ' + file.name;
+    zone.querySelector('.t-img-data').value = base64;
     zone.classList.add('has-img');
-    input.style.display='none';
+    input.style.display = 'none';
     triggerSave();
+
+    // Upload to R2 immediately in background
+    const token = localStorage.getItem('notion_token');
+    if (token) {
+      try {
+        const imgRes = await fetch(base64);
+        const blob = await imgRes.blob();
+        const uploadRes = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/images/'+tid, {
+          method: 'PUT',
+          headers: { 'Content-Type': blob.type || 'image/png' },
+          body: blob
+        });
+        if (uploadRes.ok) {
+          console.log('Image uploaded to R2:', tid);
+          // Update imgData to r2 reference
+          zone.querySelector('.t-img-data').value = 'r2:'+tid;
+          triggerSave();
+        } else {
+          console.warn('R2 upload failed, keeping base64 locally');
+        }
+      } catch(e) {
+        console.warn('R2 upload error, keeping base64 locally:', e);
+      }
+    }
   };
   r.readAsDataURL(file);
 }
+
 function rmImg(tid) {
   const zone = document.getElementById('uz-'+tid);
   zone.querySelector('.t-img-el').src='';
@@ -950,6 +979,27 @@ async function syncToNotion() {
 
 async function syncDay(dateStr, d, token) {
   const planOptions = ['Si','Parcialmente','No'];
+
+  // Step 1: Upload images to R2 first, update local imgData to r2:tid
+  for (const t of (d.trades||[])) {
+    if (t.imgData && t.imgData.startsWith('data:')) {
+      try {
+        const imgRes = await fetch(t.imgData);
+        const blob = await imgRes.blob();
+        const uploadRes = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/images/'+t.tid, {
+          method: 'PUT', headers: { 'Content-Type': blob.type||'image/png' }, body: blob
+        });
+        if (uploadRes.ok) {
+          console.log('R2 upload OK:', t.tid);
+          t.imgData = 'r2:' + t.tid; // Now safe to replace, Dados built below
+        } else {
+          console.error('R2 upload failed:', t.tid, uploadRes.status);
+        }
+      } catch(e) { console.error('Image upload exception:', t.tid, e); }
+    }
+  }
+
+  // Step 2: Build notionProps AFTER uploads so imgData is r2: for uploaded images
   const notionProps = {
     'Fecha': { title: [{ text: { content: dateStr } }] },
     'Sesión': { select: { name: d.sesion || 'New York Open' } },
@@ -971,7 +1021,7 @@ async function syncDay(dateStr, d, token) {
           tid: t.tid, symbol: t.symbol||'', meta: t.meta||'',
           dir: t.dir||'buy', resultIdx: t.resultIdx||0,
           pnl: t.pnl||0, setup: t.setup||[], nota: t.nota||'',
-          imgData: t.imgData && (t.imgData.startsWith('r2:') || t.imgData.startsWith('data:')) ? 'r2:'+t.tid : ''
+          imgData: t.imgData && t.imgData.startsWith('r2:') ? t.imgData : ''
         }))
       });
       const chunks = [];
@@ -980,7 +1030,7 @@ async function syncDay(dateStr, d, token) {
     })() }
   };
 
-  // Search for existing page
+  // Step 3: Create or update Notion page
   const searchRes = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/v1/databases/'+NOTION_DB_ID+'/query', {
     method: 'POST',
     headers: { 'Authorization': 'Bearer '+token, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
@@ -988,47 +1038,24 @@ async function syncDay(dateStr, d, token) {
   });
   const searchData = await searchRes.json();
   if (!searchRes.ok) throw new Error(searchData.message || 'Error buscando');
-
   const pageId = searchData.results?.[0]?.id || null;
-
   if (pageId) {
     const r = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/v1/pages/'+pageId, {
       method: 'PATCH',
       headers: { 'Authorization': 'Bearer '+token, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
       body: JSON.stringify({ properties: notionProps })
     });
-    if (!r.ok) { const e = await r.json(); throw new Error(e.message || 'Error actualizando'); }
+    if (!r.ok) { const e = await r.json(); throw new Error(e.message||'Error actualizando'); }
   } else {
     const r = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/v1/pages', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer '+token, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
       body: JSON.stringify({ parent: { database_id: NOTION_DB_ID }, icon: { emoji: '📊' }, properties: notionProps })
     });
-    if (!r.ok) { const e = await r.json(); throw new Error(e.message || 'Error creando'); }
-  }
-
-  // Upload images to R2
-  for (const t of (d.trades||[])) {
-    if (t.imgData && t.imgData.startsWith('data:')) {
-      try {
-        // Use fetch(dataUrl) -> blob() - most reliable conversion
-        const imgRes = await fetch(t.imgData);
-        const blob = await imgRes.blob();
-        const uploadRes = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/images/'+t.tid, {
-          method: 'PUT',
-          headers: { 'Content-Type': blob.type || 'image/png' },
-          body: blob
-        });
-        if (!uploadRes.ok) {
-          const errText = await uploadRes.text();
-          console.error('R2 upload failed:', t.tid, uploadRes.status, errText);
-        } else {
-          console.log('R2 upload OK:', t.tid);
-        }
-      } catch(e) { console.error('Image upload exception:', t.tid, e); }
-    }
+    if (!r.ok) { const e = await r.json(); throw new Error(e.message||'Error creando'); }
   }
 }
+
 
 async function doSync() {
   collectCurrentDay();
