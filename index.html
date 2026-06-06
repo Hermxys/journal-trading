@@ -764,7 +764,7 @@ function addTrade(saved) {
         <input type="file" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;"
           onchange="loadImg(this,'${tid}')">
         <div class="t-img-preview" style="display:${saved?.imgData?'block':'none'};">
-          <img class="preview-img t-img-el" src="${saved?.imgData?.startsWith('r2:') ? 'https://notion-proxy.hermisgarcia0.workers.dev/images/'+saved.imgData.slice(3) : (saved?.imgData||'')}" alt="Captura">
+          <img class="preview-img t-img-el" src="${saved?.imgData?.startsWith('r2:') ? 'https://notion-proxy.hermisgarcia0.workers.dev/images/'+encodeURIComponent(saved.imgData.slice(3)) : (saved?.imgData||'')}" alt="Captura" onerror="this.style.opacity='0.3'">
         </div>
         <div class="t-img-placeholder" style="display:${saved?.imgData?'none':'block'};">
           <span style="font-size:22px;display:block;margin-bottom:6px;">📷</span>
@@ -888,44 +888,55 @@ function loadImg(input, tid) {
   r.onload = async e => {
     const base64 = e.target.result;
     const zone = document.getElementById('uz-'+tid);
+    if (!zone) return;
 
-    // Show image immediately from base64
+    // Show image immediately
     zone.querySelector('.t-img-el').src = base64;
     zone.querySelector('.t-img-preview').style.display = 'block';
     zone.querySelector('.t-img-placeholder').style.display = 'none';
-    const imgBar = zone.querySelector('.t-img-bar');
-    imgBar.style.display = 'flex';
+    zone.querySelector('.t-img-bar').style.display = 'flex';
     zone.querySelector('.t-img-name').textContent = '📎 ' + file.name;
     zone.querySelector('.t-img-data').value = base64;
     zone.classList.add('has-img');
     input.style.display = 'none';
     triggerSave();
 
-    // Upload to R2 immediately in background
+    // Build stable R2 key: date-tradeIndex
+    const stableKey = getStableKey(tid);
     const token = localStorage.getItem('notion_token');
-    if (token) {
+    if (token && stableKey) {
       try {
         const imgRes = await fetch(base64);
         const blob = await imgRes.blob();
-        const uploadRes = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/images/'+tid, {
+        const uploadRes = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/images/'+stableKey, {
           method: 'PUT',
           headers: { 'Content-Type': blob.type || 'image/png' },
           body: blob
         });
         if (uploadRes.ok) {
-          console.log('Image uploaded to R2:', tid);
-          // Update imgData to r2 reference
-          zone.querySelector('.t-img-data').value = 'r2:'+tid;
+          console.log('Image uploaded to R2 with key:', stableKey);
+          zone.querySelector('.t-img-data').value = 'r2:'+stableKey;
           triggerSave();
-        } else {
-          console.warn('R2 upload failed, keeping base64 locally');
         }
-      } catch(e) {
-        console.warn('R2 upload error, keeping base64 locally:', e);
-      }
+      } catch(e) { console.warn('R2 upload error:', e); }
     }
   };
   r.readAsDataURL(file);
+}
+
+function getStableKey(tid) {
+  // Find which date and index this trade belongs to
+  for (const [date, dayData] of Object.entries(db)) {
+    const trades = dayData.trades || [];
+    const idx = trades.findIndex(t => t.tid === tid);
+    if (idx !== -1) return date + '-' + idx;
+  }
+  // Fallback: use currentDay
+  if (currentDay) {
+    const trades = db[currentDay]?.trades || [];
+    return currentDay + '-' + (trades.length - 1);
+  }
+  return null;
 }
 
 function rmImg(tid) {
@@ -1017,11 +1028,11 @@ async function syncDay(dateStr, d, token) {
       const payload = JSON.stringify({
         notaPre: d.notaPre||'', notaPost: d.notaPost||'', leccion: d.leccion||'',
         intDur: d.intDur||0, emosDur: d.emosDur||[],
-        trades: (d.trades||[]).map(t => ({
+        trades: (d.trades||[]).map((t,idx) => ({
           tid: t.tid, symbol: t.symbol||'', meta: t.meta||'',
           dir: t.dir||'buy', resultIdx: t.resultIdx||0,
           pnl: t.pnl||0, setup: t.setup||[], nota: t.nota||'',
-          imgData: t.imgData && t.imgData.startsWith('r2:') ? t.imgData : ''
+          imgData: t.imgData && t.imgData.startsWith('r2:') ? t.imgData : (t.imgData && t.imgData.startsWith('data:') ? 'r2:'+dateStr+'-'+idx : '')
         }))
       });
       const chunks = [];
@@ -1209,32 +1220,9 @@ async function loadFromNotion(token) {
 
 // LOAD R2 IMAGES - fetch from R2 and store as base64 locally
 async function loadR2Images() {
-  let anyLoaded = false;
-  for (const [date, dayData] of Object.entries(db)) {
-    for (const trade of (dayData.trades||[])) {
-      if (trade.imgData && trade.imgData.startsWith('r2:')) {
-        const key = trade.imgData.replace('r2:', '');
-        try {
-          console.log('Fetching image from R2:', key);
-          const res = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/images/'+key);
-          console.log('R2 response status:', res.status);
-          if (res.ok) {
-            const blob = await res.blob();
-            console.log('Blob size:', blob.size, 'type:', blob.type);
-            // Use URL.createObjectURL for immediate display
-            const objectUrl = URL.createObjectURL(blob);
-            trade.imgData = objectUrl;
-            anyLoaded = true;
-          } else {
-            console.error('R2 fetch failed:', res.status, await res.text());
-          }
-        } catch(e) { console.error('R2 load exception:', key, e); }
-      }
-    }
-  }
-  if (anyLoaded) {
-    if (currentDay) renderJournal(currentDay);
-  }
+  // Images with r2: prefix are served directly from Worker URL at render time
+  // This function is kept for compatibility
+  if (currentDay) renderJournal(currentDay);
 }
 </script>
 </body>
