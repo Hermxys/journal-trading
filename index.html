@@ -108,6 +108,7 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;fon
 .badge-green{background:var(--green-bg);color:var(--green);border-color:var(--green-border);}
 .badge-red{background:var(--red-bg);color:var(--red);border-color:var(--red-border);}
 .badge-amber{background:var(--amber-bg);color:var(--amber);border-color:var(--amber-border);}
+.badge-blue{background:var(--blue-bg);color:var(--blue);border-color:var(--blue-border);}
 .badge-neutral{background:var(--bg3);color:var(--text2);border-color:var(--border2);}
 .pnl-pos{color:var(--green);font-weight:600;font-family:'DM Mono',monospace;font-size:15px;}
 .pnl-neg{color:var(--red);font-weight:600;font-family:'DM Mono',monospace;font-size:15px;}
@@ -349,19 +350,24 @@ function renderSidebar() {
       const btn = document.createElement('button');
       btn.className = 'day-btn' + (d === currentDay ? ' active' : '');
       const dot = document.createElement('span');
-      dot.className = 'day-dot' + (dayData ? ' has-data' : '');
+      dot.className = 'day-dot';
+      let dotColor = '';
+      if (dayData && dayData.trades && dayData.trades.length > 0) {
+        let score = 0;
+        dayData.trades.forEach(t => {
+          if (t.resultIdx === 0) score++;
+          else if (t.resultIdx === 1) score--;
+        });
+        dotColor = score > 0 ? 'var(--green)' : score < 0 ? 'var(--red)' : 'var(--blue)';
+      } else if (dayData && Object.keys(dayData).length > 2) {
+        dotColor = 'var(--green)';
+      }
+      if (dotColor) dot.style.background = dotColor;
+
       const label = document.createElement('span');
       label.style.flex = '1';
       label.textContent = formatDayLabel(d);
       btn.appendChild(label);
-      if (dayData && dayData.pnl !== undefined) {
-        const pnlSpan = document.createElement('span');
-        pnlSpan.className = 'day-pnl';
-        const v = parseFloat(dayData.pnl) || 0;
-        pnlSpan.textContent = (v >= 0 ? '+' : '') + '$' + v.toFixed(0);
-        pnlSpan.style.color = v > 0 ? 'var(--green)' : v < 0 ? 'var(--red)' : 'var(--text3)';
-        btn.appendChild(pnlSpan);
-      }
       btn.appendChild(dot);
       btn.onclick = () => { currentDay = d; renderAll(); };
       sec.appendChild(btn);
@@ -422,9 +428,7 @@ function collectCurrentDay() {
   const d = db[currentDay] || {};
 
   d.sesion = page.querySelector('#sel-sesion')?.value || '';
-  d.mercado = page.querySelector('#inp-mercado')?.value || '';
   d.estadoIdx = parseInt(page.querySelector('#estado-hidden')?.value || '0');
-  d.pnl = parseFloat(page.querySelector('#inp-pnl')?.value || '0');
   d.intPre = parseInt(page.querySelector('#int-pre-hidden')?.value || '0');
   d.intDur = parseInt(page.querySelector('#int-dur-hidden')?.value || '0');
   d.intPost = parseInt(page.querySelector('#int-post-hidden')?.value || '0');
@@ -442,11 +446,10 @@ function collectCurrentDay() {
     const tid = card.dataset.tid;
     d.trades.push({
       tid,
-      symbol: card.querySelector('.t-symbol')?.value || '',
+      symbol: 'Nasdaq',
       meta: card.querySelector('.t-meta')?.value || '',
       dir: card.querySelector('.t-dir-hidden')?.value || 'buy',
       resultIdx: parseInt(card.querySelector('.t-res-hidden')?.value || '0'),
-      pnl: parseFloat(card.querySelector('.t-pnl')?.value || '0'),
       setup: [...card.querySelectorAll('.tag.on')].map(t => t.dataset.tag),
       nota: card.querySelector('.t-nota')?.value || '',
       imgData: card.querySelector('.t-img-data')?.value || ''
@@ -487,19 +490,12 @@ function renderJournal(dateStr) {
       </div>
       <div class="prop">
         <span class="prop-label">mercado</span>
-        <input id="inp-mercado" type="text" value="${d.mercado||''}" placeholder="EUR/USD, GBP/JPY…"
-          style="background:transparent;border:none;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none;width:240px;"
-          oninput="triggerSave()">
+        <span style="font-family:'DM Mono',monospace;font-size:13px;font-weight:600;color:var(--text);">Nasdaq</span>
       </div>
       <div class="prop">
         <span class="prop-label">estado del día</span>
         <span class="badge ${estados[estIdx][1]}" id="estado-badge" style="cursor:pointer;" onclick="cycleEstado()">${estados[estIdx][0]}</span>
         <input type="hidden" id="estado-hidden" value="${estIdx}">
-      </div>
-      <div class="prop">
-        <span class="prop-label">P&L del día</span>
-        <span class="pnl-pos" id="pnl-display-main">+$0.00</span>
-        <input type="hidden" id="inp-pnl" value="${d.pnl||0}">
       </div>
       <div class="prop">
         <span class="prop-label">operaciones</span>
@@ -601,9 +597,7 @@ function renderJournal(dateStr) {
     <hr class="divider">
 
     <div class="sec-title">Resumen de la semana</div>
-    <div class="stat-grid" id="week-stats">
-      <div class="stat-c"><div class="stat-n" id="week-pnl">$0</div><div class="stat-l">P&L semanal</div></div>
-      <div class="stat-c"><div class="stat-n" id="week-wr">0%</div><div class="stat-l">Win rate</div></div>
+    <div class="stat-grid" id="week-stats" style="grid-template-columns:1fr;">
       <div class="stat-c"><div class="stat-n" id="week-trades">0</div><div class="stat-l">Trades totales</div></div>
     </div>
   `;
@@ -706,7 +700,7 @@ function selPlan(el, cls, idx) {
 }
 
 // TRADES
-const resultCycle=[['Win','badge-green'],['Loss','badge-red'],['Breakeven','badge-amber']];
+const resultCycle=[['Win','badge-green'],['Loss','badge-red'],['Breakeven','badge-blue']];
 
 function addTrade(saved) {
   tradeCounter++;
@@ -724,9 +718,7 @@ function addTrade(saved) {
   card.innerHTML = `
     <div class="trade-hdr">
       <div>
-        <input type="text" value="${saved?.symbol||'EUR/USD'}" class="tsym t-symbol"
-          style="background:transparent;border:none;outline:none;cursor:text;width:110px;font-family:'DM Mono',monospace;font-size:15px;font-weight:600;color:var(--text);"
-          oninput="triggerSave()">
+        <span class="tsym" style="display:inline-block;width:110px;font-family:'DM Mono',monospace;font-size:15px;font-weight:600;color:var(--text);">Nasdaq</span>
         <div class="tmeta">
           <input type="text" class="t-meta" value="${saved?.meta||''}" placeholder="Sesión · Hora"
             style="background:transparent;border:none;outline:none;font-size:12px;color:var(--text3);font-family:'DM Sans',sans-serif;width:160px;"
@@ -743,9 +735,6 @@ function addTrade(saved) {
           ${resultCycle[resIdx][0]}
         </span>
         <input type="hidden" class="t-res-hidden" value="${resIdx}">
-        <input type="number" class="t-pnl" value="${saved?.pnl||0}" step="10"
-          style="background:transparent;border:none;outline:none;font-family:'DM Mono',monospace;font-size:14px;font-weight:600;color:${resIdx===0?'var(--green)':resIdx===1?'var(--red)':'var(--text2)'};width:80px;text-align:right;"
-          oninput="updatePnlDisplay();triggerSave()">
       </div>
       <button onclick="removeTrade(this)" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:0 0 0 4px;line-height:1;">×</button>
     </div>
@@ -798,12 +787,10 @@ function setDir(tid, dir) {
 
 function cycleResult(badge) {
   const h = badge.nextElementSibling;
-  const pnlEl = badge.parentElement.querySelector('.t-pnl');
   let idx = (parseInt(h.value)+1) % 3;
   h.value = idx;
   badge.textContent = resultCycle[idx][0];
   badge.className = 'badge '+resultCycle[idx][1]+' t-res-badge';
-  pnlEl.style.color = idx===0?'var(--green)':idx===1?'var(--red)':'var(--text2)';
   updatePnlDisplay();
   triggerSave();
 }
@@ -816,21 +803,10 @@ function removeTrade(btn) {
 
 function updatePnlDisplay() {
   const cards = document.querySelectorAll('.trade-card');
-  let total=0, wins=0;
-  cards.forEach(c => {
-    total += parseFloat(c.querySelector('.t-pnl')?.value||0);
-    if (c.querySelector('.t-res-badge')?.textContent?.trim()==='Win') wins++;
-  });
-  const el = document.getElementById('pnl-display-main');
-  if (el) {
-    el.textContent = (total>=0?'+':'')+'$'+total.toFixed(2);
-    el.className = total>=0?'pnl-pos':'pnl-neg';
-  }
-  const inp = document.getElementById('inp-pnl');
-  if (inp) inp.value = total;
   const tc = document.getElementById('trade-count');
   if (tc) tc.textContent = cards.length+(cards.length===1?' trade':' trades');
   updateWeekStats(currentDay);
+  renderSidebar();
 }
 
 // WEEK STATS
@@ -843,28 +819,16 @@ function updateWeekStats(dateStr) {
   const weekdays = getWeekdays(parseInt(y), parseInt(m)-1);
   const weekDays = weekdays.filter(dd => getWeekNumber(dd)===week);
 
-  let totalPnl=0, totalTrades=0, wins=0;
+  let totalTrades=0;
   weekDays.forEach(dd => {
     const data = dd===currentDay ? null : db[dd];
     if (dd===currentDay) {
-      document.querySelectorAll('.trade-card').forEach(c => {
-        totalPnl += parseFloat(c.querySelector('.t-pnl')?.value||0);
-        totalTrades++;
-        if (c.querySelector('.t-res-badge')?.textContent?.trim()==='Win') wins++;
-      });
+      totalTrades += document.querySelectorAll('.trade-card').length;
     } else if (data) {
-      totalPnl += parseFloat(data.pnl||0);
-      (data.trades||[]).forEach(t => {
-        totalTrades++;
-        if (t.resultIdx===0) wins++;
-      });
+      totalTrades += (data.trades||[]).length;
     }
   });
 
-  const wp = document.getElementById('week-pnl');
-  if (wp) { wp.textContent=(totalPnl>=0?'+':'')+'$'+totalPnl.toFixed(0); wp.style.color=totalPnl>=0?'var(--green)':'var(--red)'; }
-  const ww = document.getElementById('week-wr');
-  if (ww) ww.textContent=totalTrades>0?Math.round((wins/totalTrades)*100)+'%':'0%';
   const wt = document.getElementById('week-trades');
   if (wt) wt.textContent=totalTrades;
 }
@@ -976,24 +940,21 @@ async function syncDay(dateStr, d, token) {
   const notionProps = {
     'Fecha': { title: [{ text: { content: dateStr } }] },
     'Sesión': { select: { name: d.sesion || 'New York Open' } },
-    'Mercado': { rich_text: [{ text: { content: d.mercado || '' } }] },
     'Estado del día': { select: { name: ['Dentro del plan','Parcialmente','Fuera del plan'][d.estadoIdx||0] } },
-    'P&L del día': { number: parseFloat(d.pnl||0) },
     'Operaciones': { number: (d.trades||[]).length },
     'Emoción pre': { multi_select: (d.emosPre||[]).map(e => ({ name: e.replace(/^[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ]+/, '').trim() })) },
     'Intensidad pre': { number: d.intPre||0 },
     'Emoción post': { multi_select: (d.emosPost||[]).map(e => ({ name: e.replace(/^[^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ]+/, '').trim() })) },
     'Intensidad post': { number: d.intPost||0 },
     'Siguió el plan': { select: { name: planOptions[d.planIdx] || 'Si' } },
-    'Win rate %': { number: (d.trades||[]).length > 0 ? Math.round(((d.trades||[]).filter(t=>t.resultIdx===0).length/(d.trades||[]).length)*100) : 0 },
     'Datos': { rich_text: (()=>{
       const payload = JSON.stringify({
         notaPre: d.notaPre||'', notaPost: d.notaPost||'', leccion: d.leccion||'',
         intDur: d.intDur||0, emosDur: d.emosDur||[],
         trades: (d.trades||[]).map((t,idx) => ({
-          tid: t.tid, symbol: t.symbol||'', meta: t.meta||'',
+          tid: t.tid, symbol: 'Nasdaq', meta: t.meta||'',
           dir: t.dir||'buy', resultIdx: t.resultIdx||0,
-          pnl: t.pnl||0, setup: t.setup||[], nota: t.nota||'',
+          setup: t.setup||[], nota: t.nota||'',
           imgData: t.imgData || ''
         }))
       });
@@ -1100,8 +1061,10 @@ async function loadFromNotion(token) {
       const estadoMap = { 'Dentro del plan': 0, 'Parcialmente': 1, 'Fuera del plan': 2 };
       const planMap = { 'Si': 0, 'Parcialmente': 1, 'No': 2 };
 
-      const emosPre = (props['Emoción pre']?.multi_select || []).map(e => e.name);
-      const emosPost = (props['Emoción post']?.multi_select || []).map(e => e.name);
+      const allStdEmos = ['😌 Paciente','😤 Impaciente','🤔 Dudoso','😨 Miedo','😬 Nervioso','😠 Impulsivo','💪 Confiando','😰 Ansioso','😐 Neutral','🤩 Eufórico','😟 Temeroso','😤 Frustrado','😡 Enojado','😕 Decepcionado','😊 Tranquilo','😰 Estresado','😄 Feliz','😊 Satisfecho','😔 Arrepentido','😎 Orgulloso','😬 Ansioso'];
+      const mapEmo = name => allStdEmos.find(x => x.endsWith(name)) || name;
+      const emosPre = (props['Emoción pre']?.multi_select || []).map(e => mapEmo(e.name));
+      const emosPost = (props['Emoción post']?.multi_select || []).map(e => mapEmo(e.name));
       const estadoVal = props['Estado del día']?.select?.name || 'Dentro del plan';
       const planVal = props['Siguió el plan']?.select?.name || '';
       const planIdx = planVal === 'Sí' ? 0 : planVal === 'Parcialmente' ? 1 : planVal === 'No' ? 2 : -1;
@@ -1118,9 +1081,7 @@ async function loadFromNotion(token) {
       db[fecha] = {
         ...existing,
         sesion: props['Sesión']?.select?.name || existing.sesion || 'New York Open',
-        mercado: props['Mercado']?.rich_text?.[0]?.plain_text || existing.mercado || '',
         estadoIdx: estadoMap[estadoVal] ?? existing.estadoIdx ?? 0,
-        pnl: props['P&L del día']?.number ?? existing.pnl ?? 0,
         trades: extras.trades?.length ? extras.trades : (existing.trades || []),
         intPre: props['Intensidad pre']?.number ?? existing.intPre ?? 0,
         intPost: props['Intensidad post']?.number ?? existing.intPost ?? 0,
