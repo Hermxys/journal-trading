@@ -1121,17 +1121,17 @@ async function loadFromNotion(token) {
         mercado: props['Mercado']?.rich_text?.[0]?.plain_text || existing.mercado || '',
         estadoIdx: estadoMap[estadoVal] ?? existing.estadoIdx ?? 0,
         pnl: props['P&L del día']?.number ?? existing.pnl ?? 0,
-        trades: existing.trades?.length ? existing.trades : (extras.trades || []),
+        trades: extras.trades?.length ? extras.trades : (existing.trades || []),
         intPre: props['Intensidad pre']?.number ?? existing.intPre ?? 0,
         intPost: props['Intensidad post']?.number ?? existing.intPost ?? 0,
         intDur: extras.intDur ?? existing.intDur ?? 0,
-        emosPre: emosPre.length ? emosPre : (existing.emosPre || extras.emosPre || []),
-        emosPost: emosPost.length ? emosPost : (existing.emosPost || extras.emosPost || []),
-        emosDur: existing.emosDur?.length ? existing.emosDur : (extras.emosDur || []),
-        notaPre: existing.notaPre || extras.notaPre || '',
-        notaPost: existing.notaPost || extras.notaPost || '',
+        emosPre: emosPre.length ? emosPre : (extras.emosPre || existing.emosPre || []),
+        emosPost: emosPost.length ? emosPost : (extras.emosPost || existing.emosPost || []),
+        emosDur: extras.emosDur?.length ? extras.emosDur : (existing.emosDur || []),
+        notaPre: extras.notaPre || existing.notaPre || '',
+        notaPost: extras.notaPost || existing.notaPost || '',
         planIdx: planIdx !== -1 ? planIdx : (existing.planIdx ?? -1),
-        leccion: existing.leccion || extras.leccion || ''
+        leccion: extras.leccion || existing.leccion || ''
       };
       loaded++;
     });
