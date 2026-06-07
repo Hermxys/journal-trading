@@ -755,7 +755,7 @@ function addTrade(saved) {
         <input type="file" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;"
           onchange="loadImg(this,'${tid}')">
         <div class="t-img-preview" style="display:${saved?.imgData?'block':'none'};">
-          <img class="preview-img t-img-el" src="${saved?.imgData||''}" alt="Captura" onerror="this.style.opacity='0.3'">
+          <img class="preview-img t-img-el" src="${saved?.imgData?.startsWith('r2:') ? 'https://notion-proxy.hermisgarcia0.workers.dev/images/'+encodeURIComponent(saved.imgData.slice(3)) : (saved?.imgData||'')}" alt="Captura" onerror="this.style.opacity='0.3'">
         </div>
         <div class="t-img-placeholder" style="display:${saved?.imgData?'none':'block'};">
           <span style="font-size:22px;display:block;margin-bottom:6px;">📷</span>
