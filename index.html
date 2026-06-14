@@ -137,8 +137,8 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;fon
 .idot{width:26px;height:26px;border-radius:50%;border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-size:10px;color:var(--text3);display:flex;align-items:center;justify-content:center;font-family:'DM Mono',monospace;flex-shrink:0;}
 .pbar-wrap{height:3px;background:var(--bg4);border-radius:99px;margin-top:8px;overflow:hidden;}
 .pbar{height:100%;border-radius:99px;transition:width 0.2s;}
-.tbox{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;color:var(--text2);line-height:1.6;margin-top:10px;width:100%;resize:none;font-family:'DM Sans',sans-serif;outline:none;}
-.tbox:focus{border-color:var(--border2);color:var(--text);}
+.tbox{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;font-size:13px;color:var(--text2);line-height:1.6;margin-top:10px;width:100%;resize:vertical;min-height:80px;font-family:'DM Sans',sans-serif;outline:none;position:relative;z-index:1;}
+.tbox:focus{border-color:var(--purple);color:var(--text);z-index:10;box-shadow:0 0 0 2px rgba(167, 139, 250, 0.15);}
 .tbox::placeholder{color:var(--text3);}
 .sum-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
 .sum-item{text-align:center;min-width:70px;}
@@ -522,8 +522,8 @@ function renderJournal(dateStr) {
       <div><div class="phase-name">Estado emocional · Pre-sesión</div><div class="phase-sub">¿Cómo llegas hoy al mercado?</div></div>
     </div>
     <div class="eflex" id="emos-pre-container">
-      ${[['😌 Paciente','epos'],['😤 Impaciente','ewrn'],['🤔 Dudoso','eneu'],['😨 Miedo','eneg'],['😬 Nervioso','ewrn'],['😠 Impulsivo','eneg'],['💪 Confiando','epos'],['😰 Ansioso','ewrn'],['😐 Neutral','eneu'],['🤩 Eufórico','ewrn'],['😟 Temeroso','eneg'],['😤 Frustrado','eneg']].map(([e,c])=>`<div class="ebtn emo-pre ${(d.emosPre||[]).includes(e)?c+' active-emo':''}" data-emo="${e}" data-cls="${c}" onclick="togEmo(this,'emo-pre','${c}')">${e}</div>`).join('')}
-      ${(d.emosPre||[]).filter(e=>!['😌 Paciente','😤 Impaciente','🤔 Dudoso','😨 Miedo','😬 Nervioso','😠 Impulsivo','💪 Confiando','😰 Ansioso','😐 Neutral','🤩 Eufórico','😟 Temeroso','😤 Frustrado'].includes(e)).map(e=>`<div class="ebtn emo-pre active-emo eneu" data-emo="${e}" data-cls="eneu" onclick="togEmo(this,'emo-pre','eneu')">${e} <span onclick="event.stopPropagation();removeCustomEmo(this)" style="margin-left:3px;opacity:0.6;">×</span></div>`).join('')}
+      ${[['😌 Paciente','epos'],['😤 Impaciente','ewrn'],['🤔 Dudoso','eneu'],['😨 Miedo','eneg'],['😬 Nervioso','ewrn'],['😠 Impulsivo','eneg'],['💪 Confiado','epos'],['😰 Ansioso','ewrn'],['😐 Neutral','eneu'],['🤩 Eufórico','ewrn'],['😟 Temeroso','eneg'],['😤 Frustrado','eneg']].map(([e,c])=>`<div class="ebtn emo-pre ${(d.emosPre||[]).includes(e)?c+' active-emo':''}" data-emo="${e}" data-cls="${c}" onclick="togEmo(this,'emo-pre','${c}')">${e}</div>`).join('')}
+      ${(d.emosPre||[]).filter(e=>!['😌 Paciente','😤 Impaciente','🤔 Dudoso','😨 Miedo','😬 Nervioso','😠 Impulsivo','💪 Confiado','😰 Ansioso','😐 Neutral','🤩 Eufórico','😟 Temeroso','😤 Frustrado'].includes(e)).map(e=>`<div class="ebtn emo-pre active-emo eneu" data-emo="${e}" data-cls="eneu" onclick="togEmo(this,'emo-pre','eneu')">${e} <span onclick="event.stopPropagation();removeCustomEmo(this)" style="margin-left:3px;opacity:0.6;">×</span></div>`).join('')}
       <div class="ebtn" style="border-style:dashed;color:var(--text3);" onclick="addCustomEmo('pre')">+ Agregar</div>
     </div>
     <div class="int-wrap">
@@ -542,8 +542,8 @@ function renderJournal(dateStr) {
       <div><div class="phase-name">Estado emocional · Durante la sesión</div><div class="phase-sub">¿Cómo te sentiste mientras operabas?</div></div>
     </div>
     <div class="eflex" id="emos-dur-container">
-      ${[['😡 Enojado','eneg'],['😌 Paciente','epos'],['😤 Impaciente','ewrn'],['😨 Miedo','eneg'],['😕 Decepcionado','ewrn'],['😐 Neutral','eneu'],['😊 Tranquilo','epos'],['😬 Nervioso','ewrn'],['😰 Estresado','eneg'],['💪 Confiando','epos'],['🤔 Dudoso','eneu']].map(([e,c])=>`<div class="ebtn emo-dur ${(d.emosDur||[]).includes(e)?c+' active-emo':''}" data-emo="${e}" data-cls="${c}" onclick="togEmo(this,'emo-dur','${c}')">${e}</div>`).join('')}
-      ${(d.emosDur||[]).filter(e=>!['😡 Enojado','😌 Paciente','😤 Impaciente','😨 Miedo','😕 Decepcionado','😐 Neutral','😊 Tranquilo','😬 Nervioso','😰 Estresado','💪 Confiando','🤔 Dudoso'].includes(e)).map(e=>`<div class="ebtn emo-dur active-emo eneu" data-emo="${e}" data-cls="eneu" onclick="togEmo(this,'emo-dur','eneu')">${e} <span onclick="event.stopPropagation();removeCustomEmo(this)" style="margin-left:3px;opacity:0.6;">×</span></div>`).join('')}
+      ${[['😡 Enojado','eneg'],['😌 Paciente','epos'],['😤 Impaciente','ewrn'],['😨 Miedo','eneg'],['😕 Decepcionado','ewrn'],['😐 Neutral','eneu'],['😊 Tranquilo','epos'],['😬 Nervioso','ewrn'],['😰 Estresado','eneg'],['💪 Confiado','epos'],['🤔 Dudoso','eneu']].map(([e,c])=>`<div class="ebtn emo-dur ${(d.emosDur||[]).includes(e)?c+' active-emo':''}" data-emo="${e}" data-cls="${c}" onclick="togEmo(this,'emo-dur','${c}')">${e}</div>`).join('')}
+      ${(d.emosDur||[]).filter(e=>!['😡 Enojado','😌 Paciente','😤 Impaciente','😨 Miedo','😕 Decepcionado','😐 Neutral','😊 Tranquilo','😬 Nervioso','😰 Estresado','💪 Confiado','🤔 Dudoso'].includes(e)).map(e=>`<div class="ebtn emo-dur active-emo eneu" data-emo="${e}" data-cls="eneu" onclick="togEmo(this,'emo-dur','eneu')">${e} <span onclick="event.stopPropagation();removeCustomEmo(this)" style="margin-left:3px;opacity:0.6;">×</span></div>`).join('')}
       <div class="ebtn" style="border-style:dashed;color:var(--text3);" onclick="addCustomEmo('dur')">+ Agregar</div>
     </div>
     <div class="int-wrap">
@@ -603,7 +603,7 @@ function renderJournal(dateStr) {
 
     <div class="callout" style="margin-top:14px;">
       <span style="font-size:15px;flex-shrink:0;margin-top:2px;">💡</span>
-      <textarea id="leccion" class="tbox" rows="2" placeholder="Lección del día..." style="margin:0;background:transparent;border:none;padding:0;font-size:13px;color:var(--purple);" oninput="triggerSave()">${d.leccion||''}</textarea>
+      <textarea id="leccion" class="tbox" rows="4" placeholder="Lección del día..." style="margin:0;background:transparent;border:1px solid transparent;padding:8px;font-size:13px;color:var(--purple);" oninput="triggerSave()">${d.leccion||''}</textarea>
     </div>
 
     <hr class="divider">
@@ -773,7 +773,7 @@ function addTrade(saved) {
       <div class="eflex">
         ${['FVG','IFVG','OB','CISD','BRK'].map(tag=>`<span class="tag ${(saved?.setup||[]).includes(tag)?'on':''}" data-tag="${tag}" onclick="this.classList.toggle('on');triggerSave()">${tag}</span>`).join('')}
       </div>
-      <textarea class="tbox t-nota" rows="2" placeholder="¿Por qué entraste? ¿Ejecutaste bien el setup?" oninput="triggerSave()">${saved?.nota||''}</textarea>
+      <textarea class="tbox t-nota" rows="4" placeholder="¿Por qué entraste? ¿Ejecutaste bien el setup?" oninput="triggerSave()">${saved?.nota||''}</textarea>
     </div>
   `;
 
@@ -1074,7 +1074,7 @@ async function loadFromNotion(token) {
       const estadoMap = { 'Dentro del plan': 0, 'Parcialmente': 1, 'Fuera del plan': 2 };
       const planMap = { 'Si': 0, 'Parcialmente': 1, 'No': 2 };
 
-      const allStdEmos = ['😌 Paciente','😤 Impaciente','🤔 Dudoso','😨 Miedo','😬 Nervioso','😠 Impulsivo','💪 Confiando','😰 Ansioso','😐 Neutral','🤩 Eufórico','😟 Temeroso','😤 Frustrado','😡 Enojado','😕 Decepcionado','😊 Tranquilo','😰 Estresado','😄 Feliz','😊 Satisfecho','😔 Arrepentido','😎 Orgulloso','😬 Ansioso'];
+      const allStdEmos = ['😌 Paciente','😤 Impaciente','🤔 Dudoso','😨 Miedo','😬 Nervioso','😠 Impulsivo','💪 Confiado','😰 Ansioso','😐 Neutral','🤩 Eufórico','😟 Temeroso','😤 Frustrado','😡 Enojado','😕 Decepcionado','😊 Tranquilo','😰 Estresado','😄 Feliz','😊 Satisfecho','😔 Arrepentido','😎 Orgulloso','😬 Ansioso'];
       const mapEmo = name => allStdEmos.find(x => x.endsWith(name)) || name;
       const emosPre = (props['Emoción pre']?.multi_select || []).map(e => mapEmo(e.name));
       const emosPost = (props['Emoción post']?.multi_select || []).map(e => mapEmo(e.name));
