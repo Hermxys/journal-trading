@@ -208,6 +208,9 @@ select{background:var(--bg2);border:1px solid var(--border);border-radius:var(--
 .modal-btn-ok{padding:7px 16px;border-radius:99px;font-size:13px;font-weight:500;color:#fff;border:none;background:var(--purple);cursor:pointer;font-family:'DM Sans',sans-serif;}
 .modal-btn-ok:hover{opacity:0.9;}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:99px;}
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+.img-loading-spinner { animation: fadeIn 0.15s ease; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 </style>
 </head>
 <body>
@@ -252,8 +255,18 @@ select{background:var(--bg2);border:1px solid var(--border);border-radius:var(--
 <div class="save-toast" id="save-toast">✓ Guardado</div>
 
 <!-- LIGHTBOX -->
-<div id="lightbox" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:400;align-items:center;justify-content:center;backdrop-filter:blur(5px);cursor:zoom-out;" onclick="this.style.display='none'">
-  <img id="lightbox-img" style="max-width:95vw;max-height:95vh;object-fit:contain;border-radius:4px;">
+<div id="lightbox" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:999;align-items:center;justify-content:center;backdrop-filter:blur(8px);" onclick="closeLightbox(event)">
+  <div style="position:absolute;top:16px;right:20px;display:flex;gap:10px;z-index:1001;">
+    <a id="lightbox-direct-link" href="#" target="_blank" rel="noopener noreferrer" style="color:var(--text);text-decoration:none;font-size:12px;padding:6px 14px;background:var(--bg3);border:1px solid var(--border2);border-radius:99px;display:flex;align-items:center;gap:6px;font-family:'DM Sans',sans-serif;" onclick="event.stopPropagation()">
+      🔗 Abrir original
+    </a>
+    <button type="button" onclick="closeLightbox()" style="background:var(--bg3);border:1px solid var(--border2);color:var(--text);border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;">✕</button>
+  </div>
+  <div id="lightbox-loader" style="display:none;color:var(--text2);font-family:'DM Mono',monospace;font-size:13px;flex-direction:column;align-items:center;gap:10px;text-align:center;">
+    <span style="font-size:26px;display:inline-block;animation:spin 1s linear infinite;">⏳</span>
+    <span>Cargando imagen en alta resolución...</span>
+  </div>
+  <img id="lightbox-img" style="max-width:95vw;max-height:92vh;object-fit:contain;border-radius:6px;box-shadow:0 12px 48px rgba(0,0,0,0.85);display:none;cursor:default;" onclick="event.stopPropagation()">
 </div>
 
 <script>
@@ -275,12 +288,191 @@ const taObserver = new ResizeObserver(entries => {
   }
 });
 
+// IMAGE CACHING & UTILS
+const imgCache = new Map();
+
+function resolveImgUrl(raw) {
+  if (!raw) return '';
+  raw = String(raw).trim();
+  if (raw.startsWith('r2:')) {
+    const id = raw.slice(3).trim();
+    return 'https://notion-proxy.hermisgarcia0.workers.dev/images/' + encodeURIComponent(id);
+  }
+  return raw;
+}
+
+function setupTradeImage(tid, rawImgData) {
+  const url = resolveImgUrl(rawImgData);
+  if (!url) return;
+
+  const spinner = document.getElementById(`spinner-${tid}`);
+  const imgEl = document.getElementById(`img-${tid}`);
+  const errBanner = document.getElementById(`err-${tid}`);
+  const previewWrap = document.getElementById(`prev-wrap-${tid}`);
+
+  if (previewWrap) previewWrap.style.display = 'block';
+  if (spinner) spinner.style.display = 'flex';
+  if (errBanner) errBanner.style.display = 'none';
+
+  if (imgCache.has(url)) {
+    if (imgEl) {
+      imgEl.src = imgCache.get(url);
+      imgEl.dataset.currentSrc = url;
+      imgEl.style.opacity = '1';
+    }
+    if (spinner) spinner.style.display = 'none';
+    return;
+  }
+
+  if ('caches' in window) {
+    caches.open('tj-images-v1').then(cache => {
+      cache.match(url).then(match => {
+        if (match) {
+          match.blob().then(blob => {
+            const blobUrl = URL.createObjectURL(blob);
+            imgCache.set(url, blobUrl);
+            if (imgEl) {
+              imgEl.src = blobUrl;
+              imgEl.dataset.currentSrc = url;
+              imgEl.style.opacity = '1';
+            }
+            if (spinner) spinner.style.display = 'none';
+          });
+        } else {
+          startFetch();
+        }
+      }).catch(startFetch);
+    }).catch(startFetch);
+  } else {
+    startFetch();
+  }
+
+  function startFetch() {
+    if (!imgEl) return;
+    imgEl.dataset.currentSrc = url;
+    imgEl.src = url;
+
+    if ('caches' in window && !url.startsWith('data:')) {
+      fetch(url, { mode: 'cors' }).then(res => {
+        if (res.ok) {
+          caches.open('tj-images-v1').then(c => c.put(url, res.clone()));
+          res.blob().then(b => imgCache.set(url, URL.createObjectURL(b)));
+        }
+      }).catch(() => {});
+    }
+  }
+}
+
+function onImgLoaded(img, tid) {
+  const spinner = document.getElementById(`spinner-${tid}`);
+  if (spinner) spinner.style.display = 'none';
+  img.style.opacity = '1';
+  const errBanner = document.getElementById(`err-${tid}`);
+  if (errBanner) errBanner.style.display = 'none';
+}
+
+function onImgError(img, tid) {
+  const spinner = document.getElementById(`spinner-${tid}`);
+  if (spinner) spinner.style.display = 'none';
+  img.style.opacity = '0';
+  const errBanner = document.getElementById(`err-${tid}`);
+  if (errBanner) errBanner.style.display = 'flex';
+}
+
+function retryLoadImg(tid) {
+  const card = document.querySelector(`.trade-card[data-tid="${tid}"]`);
+  const raw = card?.querySelector('.t-img-data')?.value;
+  if (!raw) return;
+  const spinner = document.getElementById(`spinner-${tid}`);
+  const errBanner = document.getElementById(`err-${tid}`);
+  const imgEl = document.getElementById(`img-${tid}`);
+  if (errBanner) errBanner.style.display = 'none';
+  if (spinner) spinner.style.display = 'flex';
+  
+  let url = resolveImgUrl(raw);
+  const sep = url.includes('?') ? '&' : '?';
+  const retryUrl = url + sep + '_retry=' + Date.now();
+  if (imgEl) {
+    imgEl.dataset.currentSrc = url;
+    imgEl.src = retryUrl;
+  }
+}
+
+function openDirectImg(tid) {
+  const card = document.querySelector(`.trade-card[data-tid="${tid}"]`);
+  const raw = card?.querySelector('.t-img-data')?.value;
+  if (raw) {
+    window.open(resolveImgUrl(raw), '_blank');
+  }
+}
+
+function preloadMonthImages(ym) {
+  if (!ym) return;
+  const daysInMonth = Object.keys(db).filter(d => d.startsWith(ym));
+  daysInMonth.forEach(d => {
+    (db[d]?.trades || []).forEach(t => {
+      if (t.imgData) {
+        const url = resolveImgUrl(t.imgData);
+        if (url && !imgCache.has(url)) {
+          const preImg = new Image();
+          preImg.src = url;
+          if ('caches' in window && !url.startsWith('data:')) {
+            fetch(url, { mode: 'cors' }).then(async r => {
+              if (r.ok) {
+                const c = await caches.open('tj-images-v1');
+                await c.put(url, r.clone());
+                const b = await r.blob();
+                imgCache.set(url, URL.createObjectURL(b));
+              }
+            }).catch(() => {});
+          }
+        }
+      }
+    });
+  });
+}
+
 // LIGHTBOX
 function openLightbox(src) {
+  if (!src) return;
+  const lb = document.getElementById('lightbox');
   const img = document.getElementById('lightbox-img');
-  img.src = src;
-  document.getElementById('lightbox').style.display = 'flex';
+  const loader = document.getElementById('lightbox-loader');
+  const directLink = document.getElementById('lightbox-direct-link');
+  
+  directLink.href = src;
+  img.style.display = 'none';
+  loader.style.display = 'flex';
+  loader.innerHTML = '<span style="font-size:26px;display:inline-block;animation:spin 1s linear infinite;">⏳</span><span>Cargando imagen en alta resolución...</span>';
+  lb.style.display = 'flex';
+
+  const tempImg = new Image();
+  tempImg.onload = () => {
+    img.src = src;
+    loader.style.display = 'none';
+    img.style.display = 'block';
+  };
+  tempImg.onerror = () => {
+    loader.innerHTML = '<span style="color:var(--red);font-size:14px;">⚠️ No se pudo cargar la vista previa.</span><a href="'+src+'" target="_blank" style="color:var(--blue);margin-top:8px;text-decoration:underline;font-size:12px;">Haz clic aquí para abrir el enlace directo</a>';
+  };
+  tempImg.src = src;
 }
+
+function closeLightbox(e) {
+  if (!e || e.target === document.getElementById('lightbox') || e.target.tagName === 'BUTTON') {
+    const lb = document.getElementById('lightbox');
+    if (lb) lb.style.display = 'none';
+    const img = document.getElementById('lightbox-img');
+    if (img) img.src = '';
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    const lb = document.getElementById('lightbox');
+    if (lb && lb.style.display !== 'none') closeLightbox();
+  }
+});
 
 // HELPERS
 const days = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
@@ -338,7 +530,18 @@ function renderNav() {
     const btn = document.createElement('button');
     btn.className = 'month-btn' + (ym === currentMonth ? ' active' : '');
     btn.textContent = months[parseInt(m)-1] + ' ' + y;
-    btn.onclick = () => { currentMonth = ym; renderAll(); };
+    btn.onclick = () => {
+      currentMonth = ym;
+      const monthDays = Object.keys(db).filter(k => k.startsWith(ym) && db[k] && ((db[k].trades && db[k].trades.length > 0) || Object.keys(db[k]).length > 2)).sort();
+      if (monthDays.length > 0) {
+        currentDay = monthDays[monthDays.length - 1];
+      } else {
+        const weekdays = getWeekdays(parseInt(y), parseInt(m)-1);
+        currentDay = weekdays[0] || null;
+      }
+      renderAll();
+      preloadMonthImages(ym);
+    };
     container.appendChild(btn);
   });
 }
@@ -782,8 +985,23 @@ function addTrade(saved) {
       <div class="upload-zone" id="uz-${tid}">
         <input type="file" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;"
           onchange="loadImg(this,'${tid}')">
-        <div class="t-img-preview" style="display:${saved?.imgData?'block':'none'};">
-          <img class="preview-img t-img-el" src="${saved?.imgData?.startsWith('r2:') ? 'https://notion-proxy.hermisgarcia0.workers.dev/images/'+encodeURIComponent(saved.imgData.slice(3)) : (saved?.imgData||'')}" alt="Captura" onerror="this.style.opacity='0.3'" onclick="openLightbox(this.src)">
+        <div class="t-img-preview" id="prev-wrap-${tid}" style="display:${saved?.imgData?'block':'none'};position:relative;min-height:140px;background:#111;border-radius:var(--radius-sm);overflow:hidden;">
+          <div class="img-loading-spinner" id="spinner-${tid}" style="position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--text3);font-size:12px;font-family:'DM Mono',monospace;background:rgba(18,18,18,0.85);z-index:2;">
+            <span style="font-size:20px;display:inline-block;animation:spin 1s linear infinite;">⏳</span>
+            <span>Cargando captura...</span>
+          </div>
+          <img class="preview-img t-img-el" id="img-${tid}" alt="Captura"
+            style="opacity:0;transition:opacity 0.2s ease;"
+            onload="onImgLoaded(this,'${tid}')"
+            onerror="onImgError(this,'${tid}')"
+            onclick="openLightbox(this.dataset.currentSrc || this.src)">
+          <div class="img-error-banner" id="err-${tid}" style="display:none;position:absolute;inset:0;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:12px;background:rgba(25,15,15,0.95);color:var(--red);font-size:12px;text-align:center;z-index:3;">
+            <span>⚠️ Error al cargar imagen</span>
+            <div style="display:flex;gap:6px;margin-top:2px;">
+              <button type="button" onclick="retryLoadImg('${tid}')" style="padding:4px 10px;border-radius:99px;background:var(--red-bg);border:1px solid var(--red-border);color:var(--red);cursor:pointer;font-size:11px;font-family:'DM Sans',sans-serif;">↻ Reintentar</button>
+              <button type="button" onclick="openDirectImg('${tid}')" style="padding:4px 10px;border-radius:99px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);cursor:pointer;font-size:11px;font-family:'DM Sans',sans-serif;">🔗 Ver enlace directo</button>
+            </div>
+          </div>
         </div>
         <div class="t-img-placeholder" style="display:${saved?.imgData?'none':'block'};">
           <span style="font-size:22px;display:block;margin-bottom:6px;">📷</span>
@@ -794,7 +1012,7 @@ function addTrade(saved) {
           <span class="img-bar-name t-img-name">📎 captura.png</span>
           <button class="rm-btn" onclick="rmImg('${tid}')">✕ Eliminar</button>
         </div>
-        <input type="hidden" class="t-img-data" value="">
+        <input type="hidden" class="t-img-data" value="${saved?.imgData||''}">
       </div>
       <div class="field-lbl">setup</div>
       <div class="eflex">
@@ -811,6 +1029,9 @@ function addTrade(saved) {
   }
 
   container.appendChild(card);
+  if (saved?.imgData) {
+    setupTradeImage(tid, saved.imgData);
+  }
   const ta = card.querySelector('.t-nota');
   if (ta) taObserver.observe(ta);
   updatePnlDisplay();
@@ -903,16 +1124,20 @@ async function loadImg(input, tid) {
     if (data.success) {
       const imageUrl = data.data.url;
       
-      zone.querySelector('.t-img-el').src = imageUrl;
-      zone.querySelector('.t-img-preview').style.display = 'block';
-      zone.querySelector('.t-img-placeholder').style.display = 'none';
-      zone.querySelector('.t-img-bar').style.display = 'flex';
-      zone.querySelector('.t-img-name').textContent = '📎 ' + file.name;
+      const blobUrl = URL.createObjectURL(file);
+      imgCache.set(imageUrl, blobUrl);
+      if ('caches' in window) {
+        caches.open('tj-images-v1').then(c => c.put(imageUrl, new Response(file))).catch(() => {});
+      }
       
       zone.querySelector('.t-img-data').value = imageUrl;
+      zone.querySelector('.t-img-bar').style.display = 'flex';
+      zone.querySelector('.t-img-name').textContent = '📎 ' + file.name;
+      zone.querySelector('.t-img-placeholder').style.display = 'none';
       zone.classList.add('has-img');
       input.style.display = 'none';
       
+      setupTradeImage(tid, imageUrl);
       triggerSave();
     } else {
       alert("Error al subir la imagen. Intenta de nuevo.");
@@ -927,14 +1152,21 @@ async function loadImg(input, tid) {
 
 function rmImg(tid) {
   const zone = document.getElementById('uz-'+tid);
-  zone.querySelector('.t-img-el').src='';
-  zone.querySelector('.t-img-preview').style.display='none';
+  if (!zone) return;
+  const imgEl = zone.querySelector('.t-img-el');
+  if (imgEl) { imgEl.src=''; imgEl.style.opacity='0'; }
+  const preview = zone.querySelector('.t-img-preview');
+  if (preview) preview.style.display='none';
+  const spinner = document.getElementById('spinner-'+tid);
+  if (spinner) spinner.style.display='none';
+  const errBanner = document.getElementById('err-'+tid);
+  if (errBanner) errBanner.style.display='none';
   zone.querySelector('.t-img-placeholder').style.display='block';
   zone.querySelector('.t-img-bar').style.display='none';
   zone.querySelector('.t-img-data').value='';
   zone.classList.remove('has-img');
   const inp = zone.querySelector('input[type=file]');
-  inp.style.display=''; inp.value='';
+  if (inp) { inp.style.display=''; inp.value=''; }
   triggerSave();
 }
 
@@ -947,6 +1179,7 @@ if (allDays.length) {
   currentMonth = currentDay.slice(0,7);
 }
 renderAll();
+if (currentMonth) preloadMonthImages(currentMonth);
 setTimeout(() => { const t = localStorage.getItem('notion_token'); if (t) loadFromNotion(t); }, 400);
 
 // NOTION SYNC
@@ -1120,11 +1353,24 @@ async function loadFromNotion(token) {
         try { extras = JSON.parse(datosRaw); } catch(e) { console.warn('Datos parse error:', e); }
       }
 
+      const cProp = props['Captura'] || props['Imagen'] || props['Captura del gráfico'];
+      let capturaUrl = '';
+      if (cProp?.url) capturaUrl = cProp.url;
+      else if (cProp?.files?.[0]) {
+        capturaUrl = cProp.files[0].file?.url || cProp.files[0].external?.url || '';
+      }
+      const legacyImg = capturaUrl || extras.imgData || existing.imgData || '';
+      let loadedTrades = extras.trades?.length ? extras.trades : (existing.trades || []);
+      if (legacyImg && (!loadedTrades.length || !loadedTrades[0].imgData)) {
+        if (!loadedTrades.length) loadedTrades = [{ tid: 't' + Date.now(), symbol: 'Nasdaq' }];
+        loadedTrades[0].imgData = legacyImg;
+      }
+
       db[fecha] = {
         ...existing,
         sesion: props['Sesión']?.select?.name || existing.sesion || 'New York Open',
         estadoIdx: estadoMap[estadoVal] ?? existing.estadoIdx ?? 0,
-        trades: extras.trades?.length ? extras.trades : (existing.trades || []),
+        trades: loadedTrades,
         intPre: props['Intensidad pre']?.number ?? existing.intPre ?? 0,
         intPost: props['Intensidad post']?.number ?? existing.intPost ?? 0,
         intDur: extras.intDur ?? existing.intDur ?? 0,
@@ -1147,6 +1393,7 @@ async function loadFromNotion(token) {
       currentMonth = currentDay.slice(0, 7);
     }
     renderAll();
+    if (currentMonth) preloadMonthImages(currentMonth);
 
     if (btn) {
       btn.className = 'notion-btn synced';
