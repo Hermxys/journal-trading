@@ -119,7 +119,12 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;fon
 .tag{display:inline-flex;align-items:center;border:1px solid transparent;border-radius:6px;padding:3px 10px;font-size:12px;color:var(--text2);cursor:pointer;background:var(--bg3);}
 .tag:hover{color:var(--text);}
 .tag.on{background:var(--purple-bg);border-color:var(--purple-border);color:#c7d2fe;}
-.res-btn{margin-left:auto;min-width:100px;padding:3px 14px;border-radius:99px;font-size:12px;font-weight:500;text-align:center;border:1px dashed var(--border2);background:transparent;color:var(--text3);cursor:pointer;font-family:inherit;}
+.res-btn{min-width:100px;padding:3px 14px;border-radius:99px;font-size:12px;font-weight:500;text-align:center;border:1px dashed var(--border2);background:transparent;color:var(--text3);cursor:pointer;font-family:inherit;}
+.t-time{width:58px;text-align:center;background:transparent;border:1px solid transparent;border-radius:6px;color:var(--text);font-size:13px;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:0.02em;padding:3px 4px;font-family:inherit;outline:none;transition:border-color .15s,background .15s;}
+.t-time::placeholder{color:#4b4b52;font-weight:400;}
+.t-time:hover{border-color:var(--border2);}
+.t-time:focus{border-color:var(--purple-border);background:var(--bg2);}
+.t-time.bad{border-color:var(--red-border);background:var(--red-bg);}
 .res-btn:hover{color:var(--text2);border-color:#3a3b41;}
 .res-btn.sel-green{border-style:solid;background:var(--green-bg);border-color:var(--green-border);color:var(--green);}
 .res-btn.sel-red{border-style:solid;background:var(--red-bg);border-color:var(--red-border);color:var(--red);}
@@ -229,6 +234,8 @@ let db = JSON.parse(localStorage.getItem('tj_data') || '{}');
 let currentDay = null;
 let currentMonth = null;
 let saveTimer = null;
+let userDirty = false, userEditAt = 0, userEditDay = null;
+function markUserEdit() { userDirty = true; userEditAt = Date.now(); userEditDay = currentDay; }
 let tradeCounter = 0;
 
 const taObserver = new ResizeObserver(entries => {
@@ -451,7 +458,7 @@ function hasContent(d) {
   if (d.planIdx >= 0) return true;
   if (d.estadoIdx > 0) return true;
   if (d.sesion && d.sesion !== 'New York Open') return true;
-  return (d.trades||[]).some(t => (t.resultIdx >= 0 && t.resultIdx <= 3) || (t.setup||[]).length || (t.nota||'').trim() || t.imgData);
+  return (d.trades||[]).some(t => (t.resultIdx >= 0 && t.resultIdx <= 3) || (t.setup||[]).length || (t.nota||'').trim() || t.imgData || t.time);
 }
 function legacyEmpty(d) {
   const t = d.trades || [];
@@ -459,7 +466,7 @@ function legacyEmpty(d) {
     d.intPre || d.intDur || d.intPost ||
     (d.notaPre||'').trim() || (d.notaPost||'').trim() || (d.leccion||'').trim() ||
     d.planIdx >= 0 || d.estadoIdx > 0 || (d.sesion && d.sesion !== 'New York Open') ||
-    t.some(x => (x.setup||[]).length || (x.nota||'').trim() || x.imgData || x.resultIdx === 1 || x.resultIdx === 2 || x.resultIdx === 3));
+    t.some(x => (x.setup||[]).length || (x.nota||'').trim() || x.imgData || x.time || x.resultIdx === 1 || x.resultIdx === 2 || x.resultIdx === 3));
 }
 function cleanLegacy() {
   if (localStorage.getItem('tj_clean_v3')) return;
@@ -506,6 +513,7 @@ function getYears() {
 }
 
 function selectMonth(ym) {
+  flushCurrent();
   const [y, m] = ym.split('-');
   currentMonth = ym;
   const nowKey = todayKey();
@@ -589,7 +597,7 @@ function renderSidebar() {
       label.textContent = formatDayLabel(d);
       btn.appendChild(label);
       btn.appendChild(dot);
-      btn.onclick = () => { currentDay = d; renderAll(); };
+      btn.onclick = () => { flushCurrent(); currentDay = d; renderAll(); };
       sec.appendChild(btn);
     });
     sidebar.appendChild(sec);
@@ -622,7 +630,15 @@ function triggerSave() {
     const t = document.getElementById('save-toast');
     t.classList.add('show');
     setTimeout(() => t.classList.remove('show'), 1800);
+    if (userDirty) { userDirty = false; queueAutoSync(currentDay); }
   }, 600);
+}
+function flushCurrent() {
+  if (!currentDay) return;
+  clearTimeout(saveTimer);
+  collectCurrentDay();
+  saveData();
+  if (userDirty) { userDirty = false; queueAutoSync(currentDay); }
 }
 
 // COLLECT CURRENT DAY DATA
@@ -655,6 +671,7 @@ function collectCurrentDay() {
       tid,
       symbol: 'Nasdaq',
       meta: card.querySelector('.t-meta')?.value || '',
+      time: card.querySelector('.t-time')?.value || '',
       dir: card.querySelector('.t-dir-hidden')?.value || 'buy',
       resultIdx: (v => isNaN(v) ? -1 : v)(parseInt(card.querySelector('.t-res-hidden')?.value)),
       setup: [...card.querySelectorAll('.tag.on')].map(t => t.dataset.tag),
@@ -903,6 +920,7 @@ function addTrade(saved) {
   const rIn = saved ? saved.resultIdx : undefined;
   const resIdx = (typeof rIn === 'number' && rIn >= 0 && rIn <= 3) ? rIn : -1;
   const dir = saved?.dir || 'buy';
+  const timeVal = saved?.time ?? (/^\s*\d{1,2}:\d{2}\s*$/.test(saved?.meta || '') ? saved.meta.trim() : '');
 
   const container = document.getElementById('trades-container');
   if (!container) return;
@@ -913,20 +931,17 @@ function addTrade(saved) {
 
   card.innerHTML = `
     <div class="trade-hdr">
-      <div>
-        <span class="tsym" style="display:inline-block;width:110px;">Nasdaq</span>
-        <div class="tmeta">
-          <input type="text" class="t-meta" value="${saved?.meta||''}" placeholder="Sesión · Hora"
-            style="background:transparent;border:none;outline:none;font-size:12px;color:var(--text3);font-family:'DM Sans',sans-serif;width:160px;"
-            oninput="triggerSave()">
-        </div>
-      </div>
+      <span class="tsym" style="display:inline-block;width:110px;">Nasdaq</span>
+      <input type="hidden" class="t-meta" value="${saved?.meta||''}">
       <div class="dir-toggle" id="dirtog-${tid}">
         <button class="dir-btn buy ${dir==='buy'?'active':''}" onclick="setDir('${tid}','buy')">▲ Compra</button>
         <button class="dir-btn sell ${dir==='sell'?'active':''}" onclick="setDir('${tid}','sell')">▼ Venta</button>
       </div>
       <input type="hidden" class="t-dir-hidden" value="${dir}">
-      <button type="button" class="res-btn ${resIdx>=0?'sel-'+RESULTS[resIdx][1]:''}" onclick="cycleResult(this)" title="Clic para cambiar el resultado">${resIdx>=0?RESULTS[resIdx][0]:'Resultado'}</button>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+        <input type="text" class="t-time" value="${timeVal}" placeholder="--:--" inputmode="numeric" maxlength="5" autocomplete="off" title="Hora del trade" aria-label="Hora del trade" onfocus="timeFocus(this)" oninput="timeInput(this)" onblur="timeBlur(this)" onkeydown="timeKey(event,this)">
+        <button type="button" class="res-btn ${resIdx>=0?'sel-'+RESULTS[resIdx][1]:''}" onclick="cycleResult(this)" title="Clic para cambiar el resultado">${resIdx>=0?RESULTS[resIdx][0]:'Resultado'}</button>
+      </div>
       <input type="hidden" class="t-res-hidden" value="${resIdx}">
       <button onclick="removeTrade(this)" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:0 0 0 4px;line-height:1;">×</button>
     </div>
@@ -1010,6 +1025,60 @@ function cycleResult(btn) {
   triggerSave();
 }
 
+function parseTime(raw) {
+  raw = (raw || '').trim();
+  if (!raw) return '';
+  let h, m;
+  if (raw.includes(':')) {
+    const p = raw.split(':');
+    h = parseInt(p[0].replace(/\D/g, ''), 10);
+    m = p[1].replace(/\D/g, '') === '' ? 0 : parseInt(p[1].replace(/\D/g, ''), 10);
+  } else {
+    const dg = raw.replace(/\D/g, '');
+    if (dg.length <= 2) { h = parseInt(dg, 10); m = 0; }
+    else { h = parseInt(dg.slice(0, dg.length - 2), 10); m = parseInt(dg.slice(-2), 10); }
+  }
+  if (isNaN(h) || isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h + ':' + String(m).padStart(2, '0');
+}
+function timeFocus(el) {
+  el.dataset.prev = el.value;
+  if (!el.value && currentDay === todayKey()) {
+    const n = new Date();
+    el.value = n.getHours() + ':' + String(n.getMinutes()).padStart(2, '0');
+  }
+  setTimeout(() => el.select(), 0);
+}
+function timeInput(el) {
+  const raw = el.value;
+  let out;
+  if (raw.includes(':')) {
+    const p = raw.split(':');
+    out = p[0].replace(/\D/g, '').slice(0, 2) + ':' + p.slice(1).join('').replace(/\D/g, '').slice(0, 2);
+  } else {
+    const dg = raw.replace(/\D/g, '').slice(0, 4);
+    out = dg.length >= 3 ? dg.slice(0, dg.length - 2) + ':' + dg.slice(-2) : dg;
+  }
+  if (out !== raw) el.value = out;
+  el.classList.remove('bad');
+}
+function timeBlur(el) {
+  const prev = el.dataset.prev || '';
+  const parsed = parseTime(el.value);
+  if (parsed === null) {
+    el.classList.add('bad');
+    el.value = prev;
+    setTimeout(() => el.classList.remove('bad'), 1200);
+    return;
+  }
+  el.value = parsed;
+  if (parsed !== prev) { markUserEdit(); triggerSave(); }
+}
+function timeKey(ev, el) {
+  if (ev.key === 'Enter') { ev.preventDefault(); el.blur(); }
+  else if (ev.key === 'Escape') { el.value = el.dataset.prev || ''; el.blur(); }
+}
+
 function removeTrade(btn) {
   btn.closest('.trade-card').remove();
   updatePnlDisplay();
@@ -1084,6 +1153,7 @@ async function loadImg(input, tid) {
       }
       
       zone.querySelector('.t-img-data').value = imageUrl;
+      markUserEdit();
       zone.querySelector('.t-img-bar').style.display = 'flex';
       zone.querySelector('.t-img-name').textContent = '📎 ' + file.name;
       zone.querySelector('.t-img-placeholder').style.display = 'none';
@@ -1117,6 +1187,7 @@ function rmImg(tid) {
   zone.querySelector('.t-img-placeholder').style.display='block';
   zone.querySelector('.t-img-bar').style.display='none';
   zone.querySelector('.t-img-data').value='';
+  markUserEdit();
   zone.classList.remove('has-img');
   const inp = zone.querySelector('input[type=file]');
   if (inp) { inp.style.display=''; inp.value=''; }
@@ -1129,7 +1200,12 @@ currentDay = nearestWeekday(todayKey());
 currentMonth = currentDay.slice(0,7);
 renderAll();
 if (currentMonth) preloadMonthImages(currentMonth);
-setTimeout(() => { const t = localStorage.getItem('notion_token'); if (t) loadFromNotion(t); }, 400);
+setTimeout(async () => {
+  const t = localStorage.getItem('notion_token');
+  if (!t) return;
+  if (pendingAuto.size) await runAutoSync();
+  await loadFromNotion(t);
+}, 400);
 
 // NOTION SYNC
 const NOTION_DB_ID = '43ce266074454252aa1214bc3ce2ce19';
@@ -1175,9 +1251,9 @@ async function syncDay(dateStr, d, token) {
       const payload = JSON.stringify({
         v: 3,
         notaPre: d.notaPre||'', notaPost: d.notaPost||'', leccion: d.leccion||'',
-        intDur: d.intDur||0, emosDur: d.emosDur||[],
+        intDur: d.intDur||0, emosDur: d.emosDur||[], emosPre: d.emosPre||[], emosPost: d.emosPost||[],
         trades: (d.trades||[]).map((t,idx) => ({
-          tid: t.tid, symbol: 'Nasdaq', meta: t.meta||'',
+          tid: t.tid, symbol: 'Nasdaq', meta: t.meta||'', time: t.time||'',
           dir: t.dir||'buy', resultIdx: (typeof t.resultIdx === 'number' ? t.resultIdx : -1),
           setup: t.setup||[], nota: t.nota||'',
           imgData: t.imgData || ''
@@ -1215,61 +1291,164 @@ async function syncDay(dateStr, d, token) {
   }
 }
 
-async function doSync() {
-  collectCurrentDay();
-  const token = localStorage.getItem('notion_token');
+// ===== AUTO SYNC =====
+const NOTION_PROXY = 'https://notion-proxy.hermisgarcia0.workers.dev';
+const lastSig = {};
+const remoteDays = new Set();
+const pushedAt = {};
+let pendingAuto = new Set(JSON.parse(localStorage.getItem('tj_pending') || '[]'));
+let autoTimer = null, syncBusy = false, loadingNow = false, lastLoadAt = null, statusTimer = null;
+
+function savePending() { localStorage.setItem('tj_pending', JSON.stringify([...pendingAuto])); }
+
+function daySig(d) {
+  if (!hasContent(d)) return 'null';
+  return JSON.stringify({
+    s: d.sesion || '', e: d.estadoIdx || 0, ep: d.emosPre || [], ed: d.emosDur || [], eo: d.emosPost || [],
+    ip: d.intPre || 0, id: d.intDur || 0, io: d.intPost || 0, pl: (d.planIdx === undefined ? -1 : d.planIdx),
+    np: d.notaPre || '', no: d.notaPost || '', le: d.leccion || '',
+    t: (d.trades || []).map(t => [t.tid, t.dir || 'buy', (typeof t.resultIdx === 'number' ? t.resultIdx : -1), (t.setup || []).join(','), t.nota || '', t.imgData || '', t.time || '', t.meta || ''])
+  });
+}
+
+function setStatus(kind, text, revertMs) {
   const btn = document.getElementById('notion-sync-btn');
   const icon = document.getElementById('notion-btn-icon');
   const label = document.getElementById('notion-btn-label');
-  btn.className = 'notion-btn syncing'; icon.textContent = '⏳'; label.textContent = 'Sincronizando...';
+  if (!btn) return;
+  clearTimeout(statusTimer);
+  const icons = { syncing: '⏳', synced: '✓', error: '✕' };
+  btn.className = 'notion-btn' + (kind ? ' ' + kind : '');
+  icon.textContent = icons[kind] || '🔗';
+  label.textContent = text || 'Sync Notion';
+  if (revertMs) statusTimer = setTimeout(() => setStatus('', 'Sync Notion'), revertMs);
+}
 
-  try {
-    const allDays = Object.keys(db).filter(d => hasContent(db[d]));
-    let done = 0;
-    for (const dateStr of allDays) {
-      label.textContent = `${done+1}/${allDays.length} días...`;
-      await syncDay(dateStr, db[dateStr], token);
-      done++;
+async function withSyncLock(fn) {
+  while (syncBusy) await new Promise(r => setTimeout(r, 250));
+  syncBusy = true;
+  try { return await fn(); } finally { syncBusy = false; }
+}
+
+function queueAutoSync(dateStr) {
+  if (!dateStr || !localStorage.getItem('notion_token')) return;
+  const d = db[dateStr];
+  if (!hasContent(d) && !remoteDays.has(dateStr)) return;
+  if (daySig(d) === lastSig[dateStr]) return;
+  pendingAuto.add(dateStr);
+  savePending();
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(runAutoSync, 3000);
+}
+
+async function archiveDay(dateStr, token) {
+  const headers = { 'Authorization': 'Bearer ' + token, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' };
+  const q = await fetch(NOTION_PROXY + '/v1/databases/' + NOTION_DB_ID + '/query', {
+    method: 'POST', headers, body: JSON.stringify({ filter: { property: 'Fecha', title: { equals: dateStr } } })
+  });
+  const qd = await q.json();
+  if (!q.ok) throw new Error(qd.message || 'Error buscando');
+  const id = qd.results && qd.results[0] && qd.results[0].id;
+  if (!id) return;
+  const p = await fetch(NOTION_PROXY + '/v1/pages/' + id, { method: 'PATCH', headers, body: JSON.stringify({ archived: true }) });
+  if (!p.ok) { const e = await p.json(); throw new Error(e.message || 'Error archivando'); }
+}
+
+async function pushDay(dateStr, token) {
+  const d = db[dateStr];
+  if (hasContent(d)) await syncDay(dateStr, d, token);
+  else await archiveDay(dateStr, token);
+}
+
+async function runAutoSync() {
+  const token = localStorage.getItem('notion_token');
+  if (!token || !pendingAuto.size) return;
+  if (!navigator.onLine) { setStatus('error', 'Sin conexión'); return; }
+  await withSyncLock(async () => {
+    const days = [...pendingAuto];
+    if (!days.length) return;
+    setStatus('syncing', 'Guardando…');
+    try {
+      for (const day of days) {
+        const sig = daySig(db[day]);
+        await pushDay(day, token);
+        lastSig[day] = sig;
+        pushedAt[day] = Date.now();
+        if (daySig(db[day]) === sig) pendingAuto.delete(day);
+        if (hasContent(db[day])) remoteDays.add(day); else remoteDays.delete(day);
+      }
+      savePending();
+      setStatus('synced', 'Guardado', 2000);
+    } catch (err) {
+      console.error('autosync error:', err);
+      if (/token|Unauthorized/i.test(String(err && err.message))) {
+        localStorage.removeItem('notion_token');
+        setStatus('error', 'Token inválido');
+      } else {
+        setStatus('error', navigator.onLine ? 'Error al guardar' : 'Sin conexión');
+        clearTimeout(autoTimer);
+        autoTimer = setTimeout(runAutoSync, 15000);
+      }
     }
-    saveData();
-    btn.className = 'notion-btn synced'; icon.textContent = '✓'; label.textContent = done + ' días sincronizados';
-    setTimeout(() => { btn.className = 'notion-btn'; icon.textContent = '🔗'; label.textContent = 'Sync Notion'; }, 3000);
-  } catch(err) {
-    console.error(err);
-    btn.className = 'notion-btn error'; icon.textContent = '✕'; label.textContent = err.message.slice(0,30);
-    setTimeout(() => { btn.className = 'notion-btn'; icon.textContent = '🔗'; label.textContent = 'Sync Notion'; }, 4000);
-    if (err.message.includes('Unauthorized') || err.message.includes('token')) {
-      localStorage.removeItem('notion_token'); openModal();
+  });
+}
+
+async function doSync() {
+  flushCurrent();
+  const token = localStorage.getItem('notion_token');
+  if (!token) { openModal(); return; }
+  await withSyncLock(async () => {
+    setStatus('syncing', 'Sincronizando…');
+    try {
+      const allDays = Object.keys(db).filter(k => hasContent(db[k]));
+      let done = 0;
+      for (const dateStr of allDays) {
+        setStatus('syncing', (done + 1) + '/' + allDays.length + ' días…');
+        const sig = daySig(db[dateStr]);
+        await syncDay(dateStr, db[dateStr], token);
+        lastSig[dateStr] = sig; pushedAt[dateStr] = Date.now(); remoteDays.add(dateStr);
+        if (daySig(db[dateStr]) === sig) pendingAuto.delete(dateStr);
+        done++;
+      }
+      for (const day of [...pendingAuto]) {
+        if (!hasContent(db[day])) {
+          if (remoteDays.has(day)) { await archiveDay(day, token); remoteDays.delete(day); }
+          pendingAuto.delete(day);
+        }
+      }
+      savePending();
+      saveData();
+      setStatus('synced', done + ' días sincronizados', 3000);
+    } catch (err) {
+      console.error(err);
+      setStatus('error', String(err.message || 'Error').slice(0, 30), 4000);
+      if (/token|Unauthorized/i.test(String(err.message))) { localStorage.removeItem('notion_token'); openModal(); }
     }
-  }
+  });
 }
 
 // LOAD FROM NOTION
-async function loadFromNotion(token) {
-  const btn = document.getElementById('notion-sync-btn');
-  const icon = document.getElementById('notion-btn-icon');
-  const label = document.getElementById('notion-btn-label');
-  if (btn) { btn.className = 'notion-btn syncing'; icon.textContent = '⏳'; label.textContent = 'Cargando...'; }
+async function loadFromNotion(token, opts) {
+  opts = opts || {};
+  if (loadingNow) return;
+  loadingNow = true;
+  const t0 = Date.now();
+  const silent = !!opts.silent;
+  if (!silent) setStatus('syncing', 'Cargando…');
 
   try {
     let hasMore = true;
     let startCursor = undefined;
     const pages = [];
-
     while (hasMore) {
       const body = { page_size: 100 };
       if (startCursor) body.start_cursor = startCursor;
-
-      const res = await fetch('https://notion-proxy.hermisgarcia0.workers.dev/v1/databases/' + NOTION_DB_ID + '/query', {
+      if (opts.since) body.filter = { timestamp: 'last_edited_time', last_edited_time: { on_or_after: opts.since.toISOString() } };
+      const res = await fetch(NOTION_PROXY + '/v1/databases/' + NOTION_DB_ID + '/query', {
         method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Notion-Version': '2022-06-28',
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Authorization': 'Bearer ' + token, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Error al cargar');
       pages.push(...(data.results || []));
@@ -1278,43 +1457,49 @@ async function loadFromNotion(token) {
     }
 
     let loaded = 0;
+    const changedDays = new Set();
     pages.forEach(page => {
       const props = page.properties;
       const fecha = props['Fecha']?.title?.[0]?.plain_text;
       if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return;
+      if (pendingAuto.has(fecha) || (pushedAt[fecha] || 0) > t0 || (fecha === userEditDay && userEditAt > t0)) { remoteDays.add(fecha); return; }
 
       const estadoMap = { 'Dentro del plan': 0, 'Parcialmente': 1, 'Fuera del plan': 2 };
-      const planMap = { 'Si': 0, 'Parcialmente': 1, 'No': 2 };
-
       const allStdEmos = ['😌 Paciente','😤 Impaciente','🤔 Dudoso','😨 Miedo','😬 Nervioso','😠 Impulsivo','💪 Confiado','😰 Ansioso','😐 Neutral','🤩 Eufórico','😟 Temeroso','😤 Frustrado','😡 Enojado','😕 Decepcionado','😊 Tranquilo','😰 Estresado','😄 Feliz','😊 Satisfecho','😔 Arrepentido','😎 Orgulloso','😬 Ansioso'];
       const mapEmo = name => allStdEmos.find(x => x.endsWith(name)) || name;
-      const emosPre = (props['Emoción pre']?.multi_select || []).map(e => mapEmo(e.name));
-      const emosPost = (props['Emoción post']?.multi_select || []).map(e => mapEmo(e.name));
+      const propPre = (props['Emoción pre']?.multi_select || []).map(e => mapEmo(e.name));
+      const propPost = (props['Emoción post']?.multi_select || []).map(e => mapEmo(e.name));
       const estadoVal = props['Estado del día']?.select?.name || 'Dentro del plan';
       const planVal = props['Siguió el plan']?.select?.name || '';
       const planIdx = planVal === 'Sí' ? 0 : planVal === 'Parcialmente' ? 1 : planVal === 'No' ? 2 : -1;
-
       const existing = db[fecha] || {};
 
       let extras = {};
-      const datosBlocks = props['Datos']?.rich_text || [];
-      const datosRaw = datosBlocks.map(b => b.plain_text || '').join('');
+      const datosRaw = (props['Datos']?.rich_text || []).map(b => b.plain_text || '').join('');
       if (datosRaw) {
-        try { extras = JSON.parse(datosRaw); } catch(e) { console.warn('Datos parse error:', e); }
+        try { extras = JSON.parse(datosRaw); } catch (e) { console.warn('Datos parse error:', e); }
       }
+      const v3 = extras.v === 3;
 
-      const cProp = props['Captura'] || props['Imagen'] || props['Captura del gráfico'];
-      let capturaUrl = '';
-      if (cProp?.url) capturaUrl = cProp.url;
-      else if (cProp?.files?.[0]) {
-        capturaUrl = cProp.files[0].file?.url || cProp.files[0].external?.url || '';
+      let loadedTrades;
+      if (v3) {
+        loadedTrades = extras.trades || [];
+      } else {
+        const cProp = props['Captura'] || props['Imagen'] || props['Captura del gráfico'];
+        let capturaUrl = '';
+        if (cProp?.url) capturaUrl = cProp.url;
+        else if (cProp?.files?.[0]) capturaUrl = cProp.files[0].file?.url || cProp.files[0].external?.url || '';
+        const legacyImg = capturaUrl || extras.imgData || existing.imgData || '';
+        loadedTrades = extras.trades?.length ? extras.trades : (existing.trades || []);
+        if (legacyImg && (!loadedTrades.length || !loadedTrades[0].imgData)) {
+          if (!loadedTrades.length) loadedTrades = [{ tid: 't' + Date.now(), symbol: 'Nasdaq' }];
+          loadedTrades[0].imgData = legacyImg;
+        }
       }
-      const legacyImg = capturaUrl || extras.imgData || existing.imgData || '';
-      let loadedTrades = extras.trades?.length ? extras.trades : (existing.trades || []);
-      if (legacyImg && (!loadedTrades.length || !loadedTrades[0].imgData)) {
-        if (!loadedTrades.length) loadedTrades = [{ tid: 't' + Date.now(), symbol: 'Nasdaq' }];
-        loadedTrades[0].imgData = legacyImg;
-      }
+      loadedTrades = loadedTrades.map(t => {
+        const ex = (existing.trades || []).find(e => e.tid === t.tid);
+        return ex ? { ...ex, ...t } : t;
+      });
 
       const nd = {
         ...existing,
@@ -1324,54 +1509,68 @@ async function loadFromNotion(token) {
         intPre: props['Intensidad pre']?.number ?? existing.intPre ?? 0,
         intPost: props['Intensidad post']?.number ?? existing.intPost ?? 0,
         intDur: extras.intDur ?? existing.intDur ?? 0,
-        emosPre: emosPre.length ? emosPre : (extras.emosPre || existing.emosPre || []),
-        emosPost: emosPost.length ? emosPost : (extras.emosPost || existing.emosPost || []),
-        emosDur: extras.emosDur?.length ? extras.emosDur : (existing.emosDur || []),
-        notaPre: extras.notaPre || existing.notaPre || '',
-        notaPost: extras.notaPost || existing.notaPost || '',
-        planIdx: planIdx !== -1 ? planIdx : (existing.planIdx ?? -1),
-        leccion: extras.leccion || existing.leccion || ''
+        emosPre: v3 ? (extras.emosPre ?? propPre) : (propPre.length ? propPre : (extras.emosPre || existing.emosPre || [])),
+        emosPost: v3 ? (extras.emosPost ?? propPost) : (propPost.length ? propPost : (extras.emosPost || existing.emosPost || [])),
+        emosDur: v3 ? (extras.emosDur || []) : (extras.emosDur?.length ? extras.emosDur : (existing.emosDur || [])),
+        notaPre: v3 ? (extras.notaPre || '') : (extras.notaPre || existing.notaPre || ''),
+        notaPost: v3 ? (extras.notaPost || '') : (extras.notaPost || existing.notaPost || ''),
+        planIdx: v3 ? planIdx : (planIdx !== -1 ? planIdx : (existing.planIdx ?? -1)),
+        leccion: v3 ? (extras.leccion || '') : (extras.leccion || existing.leccion || '')
       };
-      if (extras.v !== 3 && legacyEmpty({ ...nd, planIdx: -1 })) return;
-      db[fecha] = nd;
+      if (!v3 && legacyEmpty({ ...nd, planIdx: -1 })) return;
+
+      const sigNew = daySig(nd);
+      if (sigNew !== daySig(db[fecha])) {
+        if (hasContent(nd)) db[fecha] = nd; else delete db[fecha];
+        changedDays.add(fecha);
+      }
+      lastSig[fecha] = sigNew;
+      remoteDays.add(fecha);
       loaded++;
     });
 
-    saveData();
-
-    const newDays = Object.keys(db).sort();
-    if (newDays.length && !currentDay) {
-      currentDay = newDays[newDays.length - 1];
-      currentMonth = currentDay.slice(0, 7);
+    if (changedDays.size) {
+      saveData();
+      if (changedDays.has(currentDay)) renderAll();
+      else { renderSidebar(); updateWeekStats(currentDay); }
+      if (currentMonth) preloadMonthImages(currentMonth);
     }
-    renderAll();
-    if (currentMonth) preloadMonthImages(currentMonth);
+    lastLoadAt = new Date(t0);
 
-    if (btn) {
-      btn.className = 'notion-btn synced';
-      icon.textContent = '✓';
-      label.textContent = loaded + ' días cargados';
-      setTimeout(() => {
-        btn.className = 'notion-btn';
-        icon.textContent = '🔗';
-        label.textContent = 'Sync Notion';
-      }, 3000);
-    }
+    if (!silent) setStatus('synced', loaded + ' días cargados', 2500);
+    else if (changedDays.size) setStatus('synced', 'Actualizado', 2000);
 
-  } catch(err) {
+  } catch (err) {
     console.error('loadFromNotion error:', err);
-    if (btn) {
-      btn.className = 'notion-btn error';
-      icon.textContent = '✕';
-      label.textContent = 'Error al cargar';
-      setTimeout(() => {
-        btn.className = 'notion-btn';
-        icon.textContent = '🔗';
-        label.textContent = 'Sync Notion';
-      }, 3000);
-    }
+    if (!silent) setStatus('error', navigator.onLine ? 'Error al cargar' : 'Sin conexión', 3500);
+  } finally {
+    loadingNow = false;
   }
 }
+
+function refreshFromNotion() {
+  const token = localStorage.getItem('notion_token');
+  if (!token || syncBusy || loadingNow) return;
+  if (pendingAuto.size) { runAutoSync(); return; }
+  const since = new Date((lastLoadAt ? lastLoadAt.getTime() : Date.now()) - 3 * 60 * 1000);
+  loadFromNotion(token, { silent: true, since });
+}
+
+(function wireAutoSync() {
+  const jp = document.getElementById('journal-page');
+  jp.addEventListener('input', markUserEdit, true);
+  jp.addEventListener('click', e => {
+    if (e.target.closest('button, select, [onclick], .ebtn, .idot, .tag, .plan-opt')) markUserEdit();
+  }, true);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) flushCurrent(); else refreshFromNotion();
+  });
+  window.addEventListener('pagehide', flushCurrent);
+  window.addEventListener('online', () => { if (pendingAuto.size) runAutoSync(); else refreshFromNotion(); });
+  window.addEventListener('offline', () => setStatus('error', 'Sin conexión'));
+  setInterval(() => { if (!document.hidden && navigator.onLine) refreshFromNotion(); }, 20000);
+})();
+
 </script>
 </body>
 </html>
