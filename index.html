@@ -69,10 +69,22 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;fon
 .phase-name{font-size:13px;font-weight:500;color:var(--text);}
 .phase-sub{font-size:13px;color:var(--text2);}
 .eflex{display:flex;flex-wrap:wrap;gap:6px;}
-.ebtn{border:1px solid transparent;border-radius:6px;padding:3px 10px;font-size:12px;color:var(--text2);cursor:pointer;background:var(--bg3);font-family:inherit;user-select:none;}
+.ebtn{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;border-radius:6px;padding:3px 10px;font-size:12px;color:var(--text2);cursor:pointer;background:var(--bg3);font-family:inherit;user-select:none;}
+.ebtn::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--d,#a1a1aa);flex-shrink:0;}
+.ebtn[data-cls="epos"]{--d:#4ade80;}
+.ebtn[data-cls="ewrn"]{--d:#fb923c;}
+.ebtn[data-cls="eneg"]{--d:#f87171;}
+.ebtn[data-cls="eneu"]{--d:#a1a1aa;}
 .ebtn:hover{color:var(--text);}
-.ebtn.epos,.ebtn.eneg,.ebtn.eneu,.ebtn.ewrn{background:var(--purple-bg);border-color:var(--purple-border);color:#c7d2fe;}
+.ebtn.epos{background:var(--green-bg);border-color:var(--green-border);color:var(--green);}
+.ebtn.ewrn{background:var(--orange-bg);border-color:var(--orange-border);color:var(--orange);}
+.ebtn.eneg{background:var(--red-bg);border-color:var(--red-border);color:var(--red);}
+.ebtn.eneu{background:#26272b;border-color:#3f3f46;color:#d4d4d8;}
 .ebtn[onclick*="addCustomEmo"]{border-color:var(--border2);}
+.ebtn[onclick*="addCustomEmo"]::before{display:none;}
+.emo-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--text2);margin-bottom:8px;}
+.emo-legend span{display:flex;align-items:center;gap:6px;}
+.emo-legend i{width:7px;height:7px;border-radius:50%;display:block;}
 .int-wrap{margin-top:10px;}
 .int-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
 .int-lbl{font-size:13px;font-weight:500;color:var(--label);}
@@ -705,8 +717,9 @@ function renderJournal(dateStr) {
       <div class="phase-dot phase-dot-sun">☀️</div>
       <div><div class="phase-name">Estado emocional · Pre-sesión</div><div class="phase-sub">¿Cómo llegas hoy al mercado?</div></div>
     </div>
+    <div class="emo-legend"><span><i style="background:#4ade80"></i>Calma</span><span><i style="background:#fb923c"></i>Alerta</span><span><i style="background:#f87171"></i>Negativa</span><span><i style="background:#a1a1aa"></i>Neutral</span></div>
     <div class="eflex" id="emos-pre-container">
-      ${[['😌 Paciente','epos'],['😤 Impaciente','ewrn'],['🤔 Dudoso','eneu'],['😨 Miedo','eneg'],['😬 Nervioso','ewrn'],['😠 Impulsivo','eneg'],['💪 Confiado','epos'],['😰 Ansioso','ewrn'],['😐 Neutral','eneu'],['🤩 Eufórico','ewrn'],['😟 Temeroso','eneg'],['😤 Frustrado','eneg']].map(([e,c])=>`<div class="ebtn emo-pre ${(d.emosPre||[]).includes(e)?c+' active-emo':''}" data-emo="${e}" data-cls="${c}" onclick="togEmo(this,'emo-pre','${c}')">${e}</div>`).join('')}
+      ${[['😌 Paciente','epos'],['😤 Impaciente','ewrn'],['🤔 Dudoso','ewrn'],['😨 Miedo','eneg'],['😬 Nervioso','ewrn'],['😠 Impulsivo','eneg'],['💪 Confiado','epos'],['😰 Ansioso','ewrn'],['😐 Neutral','eneu'],['🤩 Eufórico','ewrn'],['😟 Temeroso','eneg'],['😤 Frustrado','eneg']].map(([e,c])=>`<div class="ebtn emo-pre ${(d.emosPre||[]).includes(e)?c+' active-emo':''}" data-emo="${e}" data-cls="${c}" onclick="togEmo(this,'emo-pre','${c}')">${e}</div>`).join('')}
       ${(d.emosPre||[]).filter(e=>!['😌 Paciente','😤 Impaciente','🤔 Dudoso','😨 Miedo','😬 Nervioso','😠 Impulsivo','💪 Confiado','😰 Ansioso','😐 Neutral','🤩 Eufórico','😟 Temeroso','😤 Frustrado'].includes(e)).map(e=>`<div class="ebtn emo-pre active-emo eneu" data-emo="${e}" data-cls="eneu" onclick="togEmo(this,'emo-pre','eneu')">${e} <span onclick="event.stopPropagation();removeCustomEmo(this)" style="margin-left:3px;opacity:0.6;">×</span></div>`).join('')}
       <div class="ebtn" style="border-style:dashed;color:var(--text3);" onclick="addCustomEmo('pre')">+ Agregar</div>
     </div>
@@ -726,7 +739,7 @@ function renderJournal(dateStr) {
       <div><div class="phase-name">Estado emocional · Durante la sesión</div><div class="phase-sub">¿Cómo te sentiste mientras operabas?</div></div>
     </div>
     <div class="eflex" id="emos-dur-container">
-      ${[['😡 Enojado','eneg'],['😌 Paciente','epos'],['😤 Impaciente','ewrn'],['😨 Miedo','eneg'],['😕 Decepcionado','ewrn'],['😐 Neutral','eneu'],['😊 Tranquilo','epos'],['😬 Nervioso','ewrn'],['😰 Estresado','eneg'],['💪 Confiado','epos'],['🤔 Dudoso','eneu']].map(([e,c])=>`<div class="ebtn emo-dur ${(d.emosDur||[]).includes(e)?c+' active-emo':''}" data-emo="${e}" data-cls="${c}" onclick="togEmo(this,'emo-dur','${c}')">${e}</div>`).join('')}
+      ${[['😡 Enojado','eneg'],['😌 Paciente','epos'],['😤 Impaciente','ewrn'],['😨 Miedo','eneg'],['😕 Decepcionado','eneg'],['😐 Neutral','eneu'],['😊 Tranquilo','epos'],['😬 Nervioso','ewrn'],['😰 Estresado','ewrn'],['💪 Confiado','epos'],['🤔 Dudoso','ewrn']].map(([e,c])=>`<div class="ebtn emo-dur ${(d.emosDur||[]).includes(e)?c+' active-emo':''}" data-emo="${e}" data-cls="${c}" onclick="togEmo(this,'emo-dur','${c}')">${e}</div>`).join('')}
       ${(d.emosDur||[]).filter(e=>!['😡 Enojado','😌 Paciente','😤 Impaciente','😨 Miedo','😕 Decepcionado','😐 Neutral','😊 Tranquilo','😬 Nervioso','😰 Estresado','💪 Confiado','🤔 Dudoso'].includes(e)).map(e=>`<div class="ebtn emo-dur active-emo eneu" data-emo="${e}" data-cls="eneu" onclick="togEmo(this,'emo-dur','eneu')">${e} <span onclick="event.stopPropagation();removeCustomEmo(this)" style="margin-left:3px;opacity:0.6;">×</span></div>`).join('')}
       <div class="ebtn" style="border-style:dashed;color:var(--text3);" onclick="addCustomEmo('dur')">+ Agregar</div>
     </div>
@@ -744,7 +757,7 @@ function renderJournal(dateStr) {
       <div><div class="phase-name">Estado emocional · Post-sesión</div><div class="phase-sub">¿Cómo terminas el día?</div></div>
     </div>
     <div class="eflex" id="emos-post-container">
-      ${[['😤 Impaciente','ewrn'],['😰 Estresado','eneg'],['😄 Feliz','epos'],['😊 Satisfecho','epos'],['😔 Arrepentido','eneg'],['😎 Orgulloso','epos'],['😐 Neutral','eneu'],['😕 Decepcionado','ewrn'],['😡 Enojado','eneg'],['😬 Ansioso','ewrn']].map(([e,c])=>`<div class="ebtn emo-post ${(d.emosPost||[]).includes(e)?c+' active-emo':''}" data-emo="${e}" data-cls="${c}" onclick="togEmo(this,'emo-post','${c}')">${e}</div>`).join('')}
+      ${[['😤 Impaciente','ewrn'],['😰 Estresado','ewrn'],['😄 Feliz','epos'],['😊 Satisfecho','epos'],['😔 Arrepentido','eneg'],['😎 Orgulloso','epos'],['😐 Neutral','eneu'],['😕 Decepcionado','eneg'],['😡 Enojado','eneg'],['😬 Ansioso','ewrn']].map(([e,c])=>`<div class="ebtn emo-post ${(d.emosPost||[]).includes(e)?c+' active-emo':''}" data-emo="${e}" data-cls="${c}" onclick="togEmo(this,'emo-post','${c}')">${e}</div>`).join('')}
       ${(d.emosPost||[]).filter(e=>!['😤 Impaciente','😰 Estresado','😄 Feliz','😊 Satisfecho','😔 Arrepentido','😎 Orgulloso','😐 Neutral','😕 Decepcionado','😡 Enojado','😬 Ansioso'].includes(e)).map(e=>`<div class="ebtn emo-post active-emo eneu" data-emo="${e}" data-cls="eneu" onclick="togEmo(this,'emo-post','eneu')">${e} <span onclick="event.stopPropagation();removeCustomEmo(this)" style="margin-left:3px;opacity:0.6;">×</span></div>`).join('')}
       <div class="ebtn" style="border-style:dashed;color:var(--text3);" onclick="addCustomEmo('post')">+ Agregar</div>
     </div>
